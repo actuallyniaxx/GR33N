@@ -131,7 +131,15 @@ GR33N wouldn't exist without two projects that came first:
 
 [green-vita](https://github.com/Day-OS/green-vita), by Day-OS — the PS Vita one, which is where the idea that this would fit on an old Sony console came from.
 
-Full third-party licences ([libpeer](https://github.com/sepfy/libpeer), [usrsctp](https://github.com/sctplab/usrsctp), [libSRTP](https://github.com/cisco/libsrtp), [mbedTLS](https://github.com/Mbed-TLS/mbedtls), [Opus](https://github.com/xiph/opus), [cJSON](https://github.com/DaveGamble/cJSON), [PSL1GHT](https://github.com/ps3dev/PSL1GHT)) are in [CREDITOS.md](CREDITOS.md).
+Full third-party licences
+([libpeer](https://github.com/sepfy/libpeer),
+[usrsctp](https://github.com/sctplab/usrsctp),
+[libSRTP](https://github.com/cisco/libsrtp),
+[mbedTLS](https://github.com/Mbed-TLS/mbedtls),
+[Opus](https://github.com/xiph/opus),
+[cJSON](https://github.com/DaveGamble/cJSON),
+[PSL1GHT](https://github.com/ps3dev/PSL1GHT)) are in
+[CREDITOS.md](CREDITOS.md).
 
 GR33N is an independent homebrew project and is not affiliated with or endorsed by Microsoft, Xbox, Sony, or PlayStation.
 

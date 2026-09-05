@@ -1,3 +1,4 @@
+<p align="center"><img src="docs/logo.png" width="800"></p>
 
 <h1 align="center">GR33N</h1>
 
@@ -8,7 +9,15 @@
   <img alt="Xbox Cloud Gaming" src="https://img.shields.io/badge/Xbox-Cloud%20Gaming-107c10?style=for-the-badge&logo=xbox&logoColor=white">
 </p>
 
+<p align="center">
 A standalone, open-source Xbox Cloud Gaming (xCloud) client for the PlayStation 3 (homebrew). 
+</p>
+
+<p align="center"><img src="docs/screenshot.png" width="640"></p>
+
+> [!TIP]
+> Current limitations are tracked as [issues](https://github.com/actuallyniaxx/GR33N/issues).
+> Worth a look before your first session.
 
 ## Install
 
@@ -27,6 +36,28 @@ You need a homebrew-enabled PlayStation 3 and an Xbox account with a subscriptio
 > [!NOTE]
 > GR33N shows up in the Network column of the XMB, not among the games — it's a network application
 
+## Controls
+
+The DualShock 3 maps to an Xbox pad the obvious way. <img alt="X" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/13.webp" width="32"> and <img alt="O" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/14.webp" width="32"> can be swapped
+in Settings, and the dead zone is rescaled rather than clipped, so the stick
+doesn't jump the moment it leaves it.
+
+> [!NOTE]
+> The option to swap <img alt="X" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/13.webp" width="32"> and <img alt="O" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/14.webp" width="32"> will only take effect on the app's interface,
+> it won't do anything on the games as the controls are directly mapped.
+
+| PS3 | Xbox |
+|---|---|
+| <img alt="X" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/13.webp" width="32"> / <img alt="O" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/14.webp" width="32">  | A / B |
+| <img alt="Square" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/11.webp" width="32"> / <img alt="Triangle" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/12.webp" width="32"> | X / Y |
+| <img alt="LeftStick" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/1.webp" width="32"> / <img alt="RightStick" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/5.webp" width="32"> | L / R |
+| <img alt="L1" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/2.webp" width="32"> / <img alt="R1" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/6.webp" width="32"> | LB / RB |
+| <img alt="L2" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/3.webp" width="32"> / <img alt="R2" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/7.webp" width="32"> | LT / RT |
+| <img alt="L3" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/4.webp" width="32"> / <img alt="R3" src="https://amethxst.dev/pages/ps-symbol-web/static/img/controller/8.webp" width="32"> | LS / RS |
+| SELECT / START | View / Menu |
+
+To leave a game: **SELECT + Back** by default, configurable to SELECT +
+START, L1+R1+START or L3+R3.
 
 ## Building from source
 

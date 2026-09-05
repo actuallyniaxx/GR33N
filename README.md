@@ -139,7 +139,7 @@ Full third-party licences
 [Opus](https://github.com/xiph/opus),
 [cJSON](https://github.com/DaveGamble/cJSON),
 [PSL1GHT](https://github.com/ps3dev/PSL1GHT)) are in
-[CREDITOS.md](CREDITOS.md).
+[CREDITS.md](CREDITS.md).
 
 GR33N is an independent homebrew project and is not affiliated with or endorsed by Microsoft, Xbox, Sony, or PlayStation.
 

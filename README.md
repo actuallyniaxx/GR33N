@@ -90,14 +90,12 @@ The source comments are in Spanish. They're also, in places, the only documentat
 GR33N wouldn't exist without two projects that came first:
 
 [green-nx](https://github.com/rmrf404/green-nx), by rmrf404 — the xCloud client for the Nintendo Switch. Its libpeer patch is what encodes how you actually talk to xCloud, and adapting it was far more honest than rewriting it. It's GPL-3, which is why GR33N is too.
+
 [green-vita](https://github.com/Day-OS/green-vita), by Day-OS — the PS Vita one, which is where the idea that this would fit on an old Sony console came from.
 
 Full third-party licences ([libpeer](https://github.com/sepfy/libpeer), [usrsctp](https://github.com/sctplab/usrsctp), [libSRTP](https://github.com/cisco/libsrtp), [mbedTLS](https://github.com/Mbed-TLS/mbedtls), [Opus](https://github.com/xiph/opus), [cJSON](https://github.com/Davegamble/cjson), [PSL1GHT](https://github.com/ps3dev/psl1ght)) are in [CREDITOS](CREDITOS).
 
 GR33N is an independent homebrew project and is not affiliated with or endorsed by Microsoft, Xbox, Sony, or PlayStation.
-
-GR33N is an independent homebrew project and is not affiliated with or
-endorsed by Microsoft, Xbox, Sony, or PlayStation.
 
 ## License
 

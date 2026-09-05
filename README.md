@@ -41,7 +41,7 @@ export PATH=$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin`
 
 2. Dependencies
 
-Five native libraries, none of them packaged for the PS3. The scripts fetch, patch and build them into ~/.gr33n-deps/.
+GR33N depends on native libraries, none of them packaged for the PS3. The scripts fetch, patch and build them into ~/.gr33n-deps/.
 
 Order matters — each one needs the previous one's headers:
 
@@ -52,7 +52,7 @@ sh deps/build-usrsctp.sh     # SCTP, for the data channels
 sh deps/build-libpeer.sh     # WebRTC (applies deps/libpeer-ps3.patch)
 sh deps/build-opus.sh        # Opus, fixed-point`
 
-Each script checks what it built and fails loudly if something doesn't add up, rather than leaving you a half-finished .a that explodes at link time.
+Each script checks what it built and reports if something doesn't go as expected.
 
 3. Build
    
@@ -69,11 +69,11 @@ sh t/correr.sh audio    # just one`
 
 They run on a PC, with an ordinary gcc, under ASan and UBSan. They test the arithmetic: RTP reordering, the PCM ring, pad mapping, NAL slicing, message parsing. None of that needs a PS3.
 
-Passing does not mean GR33N works — the decoder, the RSX and lv2's network stack are only testable with the console switched on. It means that if something breaks, it isn't this.
+Passing does not mean GR33N works — the decoder, the RSX and lv2's network stack are only testable on real hardware. If something breaks, it isn't this.
 
-They exist for a specific reason. The PCM ring in aud.c was sized at 8192 pairs, which with an Opus frame of up to 5760 left about 50 ms usable for a 160 ms cushion. The audio would never have started, and nothing was broken: every piece did its job and the result was silence. That doesn't show up on a read. This test caught it on the first run, before a single byte was compiled for the console.
+They exist for a reason. The PCM ring in aud.c was sized at 8192 pairs, which with an Opus frame of up to 5760 left about 50 ms usable for a 160 ms cushion. The audio would never have started, and nothing was broken: every piece did its job and the result was silence. That doesn't show up on a read. This test caught it on the first run, before anything was compiled for the console.
 
-Repository layout
+## Repository layout
 `source/      the program
 include/     its headers
 shaders/     the two RSX shaders

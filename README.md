@@ -23,3 +23,14 @@ You need a homebrew-enabled PlayStation 3 and an Xbox account with a subscriptio
 > [!NOTE]
 > This procedure will only appear automatically if you don't have a session token on your system.
 > If you already had a token and it expired or was manually revoked you can re-login again from the settings tab.
+
+## Credits
+
+TO-DO
+
+GR33N is an independent homebrew project and is not affiliated with or
+endorsed by Microsoft, Xbox, Sony, or PlayStation.
+
+## License
+
+GR33N is licensed under the [LICENSE](LICENSE).

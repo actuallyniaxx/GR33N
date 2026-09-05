@@ -1,0 +1,14 @@
+/* GR33N - fragment shader del quad a pantalla completa.
+ *
+ * Ahora mismo es una copia 1:1 de la textura. Cuando el frame venga de
+ * cellVdec en YUV420, la conversion a RGB se hace AQUI (gratis, en el RSX)
+ * y no en la PPU. Este es el hueco reservado para eso.
+ */
+void main(float2 texcoord : TEXCOORD0,
+
+          uniform sampler2D srcTex,
+
+          out float4 oColor : COLOR0)
+{
+	oColor = tex2D(srcTex, texcoord);
+}

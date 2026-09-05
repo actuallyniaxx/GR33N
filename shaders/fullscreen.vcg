@@ -1,0 +1,14 @@
+/* GR33N - vertex shader del quad a pantalla completa.
+ *
+ * Las posiciones ya llegan en clip space (-1..1), asi que no hay matriz
+ * que multiplicar. Un quad a pantalla completa no necesita camara.
+ */
+void main(float4 position : POSITION,
+          float2 texcoord : TEXCOORD0,
+
+          out float4 oPosition : POSITION,
+          out float2 oTexCoord : TEXCOORD0)
+{
+	oPosition = position;
+	oTexCoord = texcoord;
+}

@@ -1,0 +1,61 @@
+GR33N - recursos de la entrada del XMB
+======================================
+
+Todo lo que dejes en esta carpeta con estos nombres exactos se recoge
+solo, tanto en 'make pkg' como en 'sh deps/install-xmb.sh'. Si un fichero
+no esta, simplemente no se usa: nada es obligatorio salvo el icono.
+
+
+QUE PONER Y CON QUE TAMANO
+--------------------------
+
+  ICON0.PNG    320 x 176    El icono de la lista. Es el unico que
+                            conviene tener si o si: sin el, algunos
+                            firmwares no dibujan la entrada.
+
+  PIC1.PNG    1920 x 1080   El fondo que ocupa la pantalla cuando la
+                            entrada esta seleccionada. Es lo que hace que
+                            parezca una aplicacion de verdad y no un
+                            homebrew.
+
+  PIC0.PNG    1000 x 560    Imagen superpuesta encima del fondo. Casi
+                            nadie la usa; queda ahi por si acaso.
+
+  SND0.AT3                  Musiquilla al seleccionar la entrada.
+                            Formato ATRAC3, no MP3 ni WAV.
+
+  ICON1.PAM                 Icono animado. Formato propietario de Sony y
+                            un dolor de generar. No merece la pena.
+
+  sfo.xml                   Plantilla del PARAM.SFO. Esta SI esta en el
+                            repositorio: ahi vive CATEGORY, que decide en
+                            que columna del XMB sale GR33N. Ahora mismo
+                            CB = Red.
+
+
+LOS PNG: CUIDADO CON EL TAMANO EXACTO
+-------------------------------------
+
+El XMB no escala estas imagenes. Si ICON0.PNG no mide 320x176 clavados,
+lo que pasa depende del firmware: a veces se recorta, a veces se estira,
+y a veces no se dibuja. No es un limite superior, es una medida.
+
+Desde la linea de comandos, con ImageMagick:
+
+    magick loquesea.png -resize 320x176! ICON0.PNG
+    magick fondo.jpg    -resize 1920x1080! PIC1.PNG
+
+La exclamacion es importante: fuerza el tamano aunque deforme. Sin ella
+ImageMagick respeta la proporcion y te deja una imagen de 320x180 que no
+vale.
+
+
+DESPUES DE CAMBIAR ALGO
+-----------------------
+
+    make pkg                    -> gr33n.pkg, para instalar
+    sh deps/install-xmb.sh      -> xmb/GR33N0PS3/, para copiar a mano
+
+El XMB cachea los iconos con bastante insistencia. Si cambias ICON0.PNG y
+sigues viendo el viejo, reinstala la aplicacion o reinicia la consola: no
+es que no haya cogido el fichero.

@@ -1,0 +1,1873 @@
+diff --git a/src/agent.c b/src/agent.c
+index 57de5c9..5d2a1ef 100644
+--- a/src/agent.c
++++ b/src/agent.c
+@@ -4,6 +4,12 @@
+ #include <sys/select.h>
+ #include <unistd.h>
+ 
++#ifdef GR33N_PS3
++/* netPoll, struct pollfd y POLLIN. La misma cabecera que usa
++ * source/link.c de GR33N, que lleva meses recibiendo por ahi. */
++#include <net/net.h>
++#endif
++
+ #include "agent.h"
+ #include "base64.h"
+ #include "ice.h"
+@@ -13,7 +19,15 @@
+ #include "utils.h"
+ 
+ #define AGENT_POLL_TIMEOUT 1
+-#define AGENT_CONNCHECK_MAX 1000
++/* Checks run one pair at a time, roughly one per select() timeout, so this is
++ * a per-pair budget of ~3 s. It used to be 8000 (~15 s) to give a distant
++ * Azure media host time to answer; with several pairs to get through that
++ * blew past the caller's connect timeout before the reachable candidate was
++ * ever tried. The whole list is now retried AGENT_CONNCHECK_ROUNDS times
++ * instead, which gives a slow peer the same total time without spending it
++ * all on the first pair. */
++#define AGENT_CONNCHECK_MAX 1500
++#define AGENT_CONNCHECK_ROUNDS 3
+ #define AGENT_CONNCHECK_PERIOD 100
+ #define AGENT_STUN_RECV_MAXTIMES 1000
+ 
+@@ -21,6 +35,7 @@ void agent_clear_candidates(Agent* agent) {
+   agent->local_candidates_count = 0;
+   agent->remote_candidates_count = 0;
+   agent->candidate_pairs_num = 0;
++  agent->conncheck_rounds = 0;
+ }
+ 
+ int agent_create(Agent* agent) {
+@@ -58,6 +73,78 @@ void agent_destroy(Agent* agent) {
+ }
+ 
+ static int agent_socket_recv(Agent* agent, Address* addr, uint8_t* buf, int len) {
++#ifdef GR33N_PS3
++  /* GR33N: netPoll en vez de select, y conviene contar bien por que,
++   * porque la primera explicacion que escribi aqui era la equivocada.
++   *
++   * Decia "en la PS3 select no se puede usar, los descriptores son
++   * numeros de mil millones y FD_SET los convierte en una escritura 64
++   * MB fuera de la pila". Lo de la escritura es cierto y colgo la
++   * consola de verdad, pero la causa estaba mal puesta: esos numeros
++   * gordos los reparte socket(), la familia POSIX. netSocket() --que es
++   * la que usa este fichero desde que se parcheo socket.c-- reparte 46.
++   * Y 46 cabe en un fd_set de sobra.
++   *
++   * O sea que select tampoco era el culpable: el culpable era mezclar
++   * las dos familias de PSL1GHT, que no comparten descriptores. El
++   * detalle medido esta en socket.c.
++   *
++   * Se queda netPoll igualmente, y no por inercia: no depende del tope
++   * de fd_set para nada, es lo que GR33N usa en source/link.c desde el
++   * primer dia, y no arrastra el fd_set roto de PSL1GHT --FD_SETSIZE
++   * dice 1024 y la estructura tiene sitio para 512-- a un bucle que se
++   * ejecuta miles de veces por conexion.
++   *
++   * De paso se arregla el segundo fallo de esta funcion, que estaba en
++   * el original: el bucle de FD_ISSET recorria SIEMPRE dos sockets
++   * mientras el de FD_SET solo rellenaba uno con CONFIG_IPV6 a cero.
++   * Leia un socket sin inicializar. Aqui se recorren los que de verdad
++   * se metieron. */
++  int ret = -1;
++  int i, n = 0;
++  int idx[2];
++  struct pollfd pfd[2];
++  int addr_type[] = { AF_INET,
++#if CONFIG_IPV6
++                      AF_INET6,
++#endif
++  };
++
++  for (i = 0; i < (int)(sizeof(addr_type) / sizeof(addr_type[0])); i++) {
++    if (agent->udp_sockets[i].fd < 0) {
++      continue;
++    }
++    idx[n] = i;
++    pfd[n].fd = agent->udp_sockets[i].fd;
++    pfd[n].events = POLLIN;
++    pfd[n].revents = 0;
++    n++;
++  }
++
++  if (n == 0) {
++    return -1;
++  }
++
++  /* netPoll cuenta en milisegundos, que es justo lo que ya era
++   * AGENT_POLL_TIMEOUT antes de que el original lo multiplicara por mil
++   * para meterlo en un timeval. */
++  ret = netPoll(pfd, n, AGENT_POLL_TIMEOUT);
++  if (ret < 0) {
++    LOGE("netPoll error");
++  } else if (ret == 0) {
++    // timeout
++  } else {
++    for (i = 0; i < n; i++) {
++      if (pfd[i].revents & POLLIN) {
++        memset(buf, 0, len);
++        ret = udp_socket_recvfrom(&agent->udp_sockets[idx[i]], addr, buf, len);
++        break;
++      }
++    }
++  }
++
++  return ret;
++#else
+   int ret = -1;
+   int i = 0;
+   int maxfd = -1;
+@@ -98,6 +185,7 @@ static int agent_socket_recv(Agent* agent, Address* addr, uint8_t* buf, int len)
+   }
+ 
+   return ret;
++#endif
+ }
+ 
+ static int agent_socket_recv_attempts(Agent* agent, Address* addr, uint8_t* buf, int len, int maxtimes) {
+@@ -339,6 +427,20 @@ static void agent_create_binding_request(Agent* agent, StunMessage* msg) {
+   stun_msg_finish(msg, STUN_CREDENTIAL_SHORT_TERM, agent->remote_upwd, strlen(agent->remote_upwd));
+ }
+ 
++// Consent-freshness keepalive (RFC 7675): resend a STUN binding request on the
++// selected pair so the peer keeps consent to send media to us. libpeer stops
++// sending STUN after ICE connects; some peers treat the silence as lost consent
++// and pause the media they send us.
++int agent_send_binding_request(Agent* agent) {
++  IceCandidatePair* pair = agent->selected_pair ? agent->selected_pair : agent->nominated_pair;
++  if (pair == NULL || pair->remote == NULL)
++    return -1;
++  StunMessage msg;
++  memset(&msg, 0, sizeof(msg));
++  agent_create_binding_request(agent, &msg);
++  return agent_socket_send(agent, &pair->remote->addr, msg.buf, msg.size);
++}
++
+ void agent_process_stun_request(Agent* agent, StunMessage* stun_msg, Address* addr) {
+   StunMessage msg;
+   StunHeader* header;
+@@ -373,7 +475,11 @@ int agent_recv(Agent* agent, uint8_t* buf, int len) {
+   int ret = -1;
+   StunMessage stun_msg;
+   Address addr;
+-  if ((ret = agent_socket_recv(agent, &addr, buf, len)) > 0 && stun_probe(buf, len) == 0) {
++  // NOTE: for non-STUN packets (DTLS records, etc.) this MUST return the byte
++  // count so peer_connection_dtls_srtp_recv can hand them to mbedtls. Only
++  // STUN packets are consumed here (returning 0).
++  if ((ret = agent_socket_recv(agent, &addr, buf, len)) > 0 &&
++      stun_probe(buf, len) == 0) {
+     memcpy(stun_msg.buf, buf, ret);
+     stun_msg.size = ret;
+     stun_parse_msg_buf(&stun_msg);
+@@ -434,18 +540,112 @@ void agent_set_remote_description(Agent* agent, char* description) {
+   LOGD("remote upwd: %s", agent->remote_upwd);
+ }
+ 
+-void agent_update_candidate_pairs(Agent* agent) {
+-  int i, j;
+-  // Please set gather candidates before set remote description
++/* IPv4 address in a range that only exists inside somebody's LAN. */
++static int agent_addr_is_private(const Address* addr) {
++  const uint8_t* b;
++  if (addr->family != AF_INET)
++    return 0;
++  b = (const uint8_t*)&addr->sin.sin_addr.s_addr; /* network order */
++  if (b[0] == 10)
++    return 1;
++  if (b[0] == 172 && (b[1] & 0xf0) == 16)
++    return 1;
++  if (b[0] == 192 && b[1] == 168)
++    return 1;
++  if (b[0] == 169 && b[1] == 254)
++    return 1;
++  if (b[0] == 127)
++    return 1;
++  return 0;
++}
++
++static int agent_addr_same_subnet(const Address* a, const Address* b) { /* /24 */
++  const uint8_t* x;
++  const uint8_t* y;
++  if (a->family != AF_INET || b->family != AF_INET)
++    return 0;
++  x = (const uint8_t*)&a->sin.sin_addr.s_addr;
++  y = (const uint8_t*)&b->sin.sin_addr.s_addr;
++  return x[0] == y[0] && x[1] == y[1] && x[2] == y[2];
++}
++
++static int agent_addr_same_endpoint(const Address* a, const Address* b) {
++  if (a->family != b->family || a->port != b->port)
++    return 0;
++  if (a->family == AF_INET)
++    return memcmp(&a->sin.sin_addr, &b->sin.sin_addr, sizeof(a->sin.sin_addr)) == 0;
++#if CONFIG_IPV6
++  if (a->family == AF_INET6)
++    return memcmp(&a->sin6.sin6_addr, &b->sin6.sin6_addr, sizeof(a->sin6.sin6_addr)) == 0;
++#endif
++  return 0;
++}
++
++/* A remote address on a private range that none of our own interfaces share
++ * cannot answer us -- it is the peer's LAN address seen from outside its LAN.
++ * Those pairs go last so the reachable ones are checked first. */
++static int agent_remote_rank(Agent* agent, const IceCandidate* remote) {
++  int i;
++  if (!agent_addr_is_private(&remote->addr))
++    return 0;
+   for (i = 0; i < agent->local_candidates_count; i++) {
++    if (agent_addr_same_subnet(&agent->local_candidates[i].addr, &remote->addr))
++      return 0;
++  }
++  if (agent->b_host_addr && agent_addr_same_subnet(&agent->host_addr, &remote->addr))
++    return 0;
++  return 1;
++}
++
++void agent_update_candidate_pairs(Agent* agent) {
++  int i, j, k, rank;
++  char addr_string[ADDRSTRLEN];
++  IceCandidate* local;
++  // Please set gather candidates before set remote description.
++  //
++  // Pairs are checked strictly in order, so the order decides how long a
++  // connection takes -- and whether it happens at all before the caller's
++  // timeout. Two rules on top of upstream's plain nested loop:
++  //   1) One pair per distinct remote endpoint. Everything is sent from the
++  //      same socket, so a second pair to the same ip:port only differs in
++  //      bookkeeping, and xCloud lists the same console endpoint up to three
++  //      times (front-door placeholders + the real candidate).
++  //   2) Remote LAN addresses we cannot possibly route to go last. Streaming
++  //      from your own console over the internet used to start with a check
++  //      against the console's 192.168.x.y, which burns the whole per-pair
++  //      budget before the reachable public candidate is ever tried.
++  agent->conncheck_rounds = 0;
++  for (rank = 0; rank <= 1; rank++) {
+     for (j = 0; j < agent->remote_candidates_count; j++) {
+-      if (agent->local_candidates[i].addr.family == agent->remote_candidates[j].addr.family) {
+-        agent->candidate_pairs[agent->candidate_pairs_num].local = &agent->local_candidates[i];
+-        agent->candidate_pairs[agent->candidate_pairs_num].remote = &agent->remote_candidates[j];
+-        agent->candidate_pairs[agent->candidate_pairs_num].priority = agent->local_candidates[i].priority + agent->remote_candidates[j].priority;
+-        agent->candidate_pairs[agent->candidate_pairs_num].state = ICE_CANDIDATE_STATE_FROZEN;
+-        agent->candidate_pairs_num++;
++      if (agent_remote_rank(agent, &agent->remote_candidates[j]) != rank)
++        continue;
++      local = NULL;
++      for (i = 0; i < agent->local_candidates_count; i++) {
++        if (agent->local_candidates[i].addr.family == agent->remote_candidates[j].addr.family) {
++          local = &agent->local_candidates[i];
++          break;
++        }
+       }
++      if (local == NULL)
++        continue;
++      for (k = 0; k < agent->candidate_pairs_num; k++) {
++        if (agent_addr_same_endpoint(&agent->candidate_pairs[k].remote->addr,
++                                     &agent->remote_candidates[j].addr))
++          break;
++      }
++      if (k < agent->candidate_pairs_num)
++        continue;  // duplicate endpoint
++      if (agent->candidate_pairs_num >= AGENT_MAX_CANDIDATE_PAIRS)
++        break;
++      agent->candidate_pairs[agent->candidate_pairs_num].local = local;
++      agent->candidate_pairs[agent->candidate_pairs_num].remote = &agent->remote_candidates[j];
++      agent->candidate_pairs[agent->candidate_pairs_num].priority = local->priority + agent->remote_candidates[j].priority;
++      agent->candidate_pairs[agent->candidate_pairs_num].state = ICE_CANDIDATE_STATE_FROZEN;
++      agent->candidate_pairs[agent->candidate_pairs_num].conncheck = 0;
++      addr_to_string(&agent->remote_candidates[j].addr, addr_string, sizeof(addr_string));
++      LOGI("candidate pair %d: %s:%d%s", agent->candidate_pairs_num, addr_string,
++           agent->remote_candidates[j].addr.port, rank ? " (unroutable LAN, last resort)" : "");
++      agent->candidate_pairs_num++;
+     }
+   }
+   LOGD("candidate pairs num: %d", agent->candidate_pairs_num);
+@@ -501,6 +701,16 @@ int agent_select_candidate_pair(Agent* agent) {
+       return 0;
+     }
+   }
+-  // all candidate pairs are failed
++  // All candidate pairs failed. Run the list again a couple of times before
++  // giving up: a console that was still waking up, or a NAT that needed our
++  // first packets to open a mapping, often answers on the second pass.
++  if (++agent->conncheck_rounds < AGENT_CONNCHECK_ROUNDS) {
++    LOGI("all candidate pairs failed, retrying (round %d)", agent->conncheck_rounds + 1);
++    for (i = 0; i < agent->candidate_pairs_num; i++) {
++      agent->candidate_pairs[i].state = ICE_CANDIDATE_STATE_FROZEN;
++      agent->candidate_pairs[i].conncheck = 0;
++    }
++    return agent_select_candidate_pair(agent);
++  }
+   return -1;
+ }
+diff --git a/src/agent.h b/src/agent.h
+index 382d5a4..f696cb7 100644
+--- a/src/agent.h
++++ b/src/agent.h
+@@ -68,6 +68,7 @@ struct Agent {
+   IceCandidatePair* nominated_pair;
+ 
+   int candidate_pairs_num;
++  int conncheck_rounds; /* completed passes over the whole pair list */
+   int use_candidate;
+   uint32_t transaction_id[3];
+ };
+@@ -80,6 +81,9 @@ void agent_get_local_description(Agent* agent, char* description, int length);
+ 
+ int agent_send(Agent* agent, const uint8_t* buf, int len);
+ 
++// Resend a STUN binding request on the selected pair (ICE consent keepalive).
++int agent_send_binding_request(Agent* agent);
++
+ int agent_recv(Agent* agent, uint8_t* buf, int len);
+ 
+ void agent_set_remote_description(Agent* agent, char* description);
+diff --git a/src/config.h b/src/config.h
+index 94905a8..1d204ff 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -58,7 +58,9 @@
+ #endif
+ 
+ #ifndef CONFIG_MAX_NALU_SIZE
+-#define CONFIG_MAX_NALU_SIZE (10 * 1024)  // 10KB
++// A 1080p H.264 IDR keyframe is hundreds of KB; 10KB truncated every keyframe
++// mid-reassembly, corrupting the reference frame and wrecking all video.
++#define CONFIG_MAX_NALU_SIZE (2 * 1024 * 1024)  // 2 MB
+ #endif
+ 
+ #define CONFIG_IPV6 0
+diff --git a/src/dtls_srtp.c b/src/dtls_srtp.c
+index dd54616..46f2828 100644
+--- a/src/dtls_srtp.c
++++ b/src/dtls_srtp.c
+@@ -185,6 +185,39 @@ int dtls_srtp_init(DtlsSrtp* dtls_srtp, DtlsSrtpRole role, void* user_data) {
+   mbedtls_ssl_conf_read_timeout(&dtls_srtp->conf, 1000);
+ 
+   if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
++#if defined(GR33N_PS3)
++    /* GR33N_PS3: en la PS3 no somos servidor de DTLS, nunca.
++     *
++     * La oferta que manda GR33N lleva a=setup:active, o sea que la consola
++     * es siempre el CLIENTE: es quien manda el ClientHello. Eso lo fija
++     * peer_connection.c poniendo el rol a DTLS_SRTP_ROLE_CLIENT antes de
++     * llamar aqui.
++     *
++     * POR QUE HAY QUE COMPILARLO FUERA Y NO BASTA CON QUE NO SE EJECUTE.
++     * Este `if` es de tiempo de ejecucion, asi que el compilador tiene que
++     * traducir las dos ramas, y las tres llamadas de aqui dentro necesitan
++     * MBEDTLS_SSL_SRV_C:
++     *
++     *     mbedtls_ssl_conf_dtls_cookies   ssl.h:3089, guardada por
++     *                                     MBEDTLS_SSL_DTLS_HELLO_VERIFY
++     *                                     Y MBEDTLS_SSL_SRV_C
++     *     MBEDTLS_SSL_IS_SERVER           el preajuste de servidor entero
++     *
++     * ps3_mbedtls_config.h hace `#undef MBEDTLS_SSL_SRV_C` a proposito, con
++     * el motivo escrito al lado: "no somos servidor". Volver a encenderlo
++     * para una rama que no se ejecuta jamas serian kilobytes de codigo de
++     * servidor TLS dentro del EBOOT y, sobre todo, superficie de ataque
++     * gratis en la parte del programa que habla con la red.
++     *
++     * Se falla RUIDOSAMENTE en vez de configurar como cliente en silencio.
++     * Si alguna vez alguien pide el rol de servidor aqui, tiene que
++     * enterarse: un DTLS que se cree servidor y actua de cliente no da
++     * error, da un saludo que no termina. */
++    LOGE("GR33N_PS3: DTLS_SRTP_ROLE_SERVER pedido, y esta consola solo "
++         "puede ser cliente (la oferta va con a=setup:active). "
++         "Compilado sin MBEDTLS_SSL_SRV_C a proposito.");
++    return -1;
++#else
+     mbedtls_ssl_config_defaults(&dtls_srtp->conf,
+                                 MBEDTLS_SSL_IS_SERVER,
+                                 MBEDTLS_SSL_TRANSPORT_DATAGRAM,
+@@ -195,6 +228,7 @@ int dtls_srtp_init(DtlsSrtp* dtls_srtp, DtlsSrtpRole role, void* user_data) {
+     mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_srtp->ctr_drbg);
+ 
+     mbedtls_ssl_conf_dtls_cookies(&dtls_srtp->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check, &dtls_srtp->cookie_ctx);
++#endif
+ 
+   } else {
+     mbedtls_ssl_config_defaults(&dtls_srtp->conf,
+@@ -211,10 +245,52 @@ int dtls_srtp_init(DtlsSrtp* dtls_srtp, DtlsSrtpRole role, void* user_data) {
+ 
+   mbedtls_ssl_conf_srtp_mki_value_supported(&dtls_srtp->conf, MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED);
+ 
++#if !defined(GR33N_PS3)
++  /* GR33N_PS3: ssl.h:4514 la guarda con MBEDTLS_SSL_SRV_C, que aqui esta
++   * apagado. Y no hace falta: dice si el SERVIDOR manda la lista de CAs
++   * aceptables al pedir certificado de cliente. Siendo cliente siempre, no
++   * hay nada que decidir. */
+   mbedtls_ssl_conf_cert_req_ca_list(&dtls_srtp->conf, MBEDTLS_SSL_CERT_REQ_CA_LIST_DISABLED);
++#endif
++
++  // Retransmit lost handshake flights at 1/2/4 s, then give up: keeps a full
++  // attempt (~7 s of resends) inside the engine's 12 s dead-media window.
++  // Must come after ssl_config_defaults or the preset would overwrite it.
++  mbedtls_ssl_conf_handshake_timeout(&dtls_srtp->conf, 1000, 4000);
+ 
+   mbedtls_ssl_setup(&dtls_srtp->ssl, &dtls_srtp->conf);
+ 
++#ifdef GR33N_PS3
++  /* GR33N: sin esto, mbedTLS 3.6 se niega a dar el saludo DTLS.
++   *
++   * Desde la 3.6.1, si un CLIENTE tiene authmode VERIFY_REQUIRED --que es
++   * lo que pone dtls_srtp_init() diez lineas mas arriba-- y nadie ha
++   * llamado a mbedtls_ssl_set_hostname(), el saludo aborta con
++   * MBEDTLS_ERR_SSL_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME (-0x5D80).
++   * Lo comprueba get_hostname_for_verification() en ssl_tls.c:9851.
++   *
++   * green-nx no lo ve porque compila con la 3.4.0, que es el submodulo
++   * que trae libpeer. GR33N va con la 3.6.4, la misma con la que
++   * net_tls.c habla TLS 1.3 con Microsoft, y bajarla para esto seria
++   * cambiar un problema por uno peor.
++   *
++   * Y no es que nos saltemos una comprobacion: EN WebRTC NO HAY NOMBRE DE
++   * SERVIDOR QUE COMPROBAR. El certificado del otro lado es autofirmado y
++   * lo que lo autentica es su huella SHA-256, que llega en el SDP por un
++   * canal HTTPS ya autenticado. Esa comparacion la hace libpeer justo
++   * despues del saludo, en dtls_srtp_handshake(), y devuelve -1 si no
++   * cuadra. La seguridad la da la huella, no el nombre.
++   *
++   * Pasar NULL es exactamente lo que documenta mbedTLS para este caso:
++   * marca la decision como tomada a proposito en vez de olvidada. */
++  mbedtls_ssl_set_hostname(&dtls_srtp->ssl, NULL);
++#endif
++
++  // Keep our DTLS records comfortably under common path MTUs (PPPoE, CGNAT
++  // tunnels): 1200 matches what browsers assume for WebRTC. Only affects
++  // fragments we send; the server sizes its own.
++  mbedtls_ssl_set_mtu(&dtls_srtp->ssl, 1200);
++
+   return 0;
+ }
+ 
+@@ -381,14 +457,48 @@ static int dtls_srtp_do_handshake(DtlsSrtp* dtls_srtp) {
+ 
+   mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
+ 
++  // Event-driven handshake: the recv callback returns WANT_READ instead of
++  // blocking, so this loop is what gives the retransmission timer (set above)
++  // a chance to fire and resend lost flights. mbedtls itself gives up with
++  // MBEDTLS_ERR_SSL_TIMEOUT once the configured handshake timeout is spent;
++  // the spin cap is only a backstop should the timer ever misbehave.
++  int spins = 0;
+   do {
+     ret = mbedtls_ssl_handshake(&dtls_srtp->ssl);
+-
++    if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
++      if (++spins > 15000) {
++        ret = MBEDTLS_ERR_SSL_TIMEOUT;
++        break;
++      }
++      usleep(1000);
++    }
+   } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+ 
+   return ret;
+ }
+ 
++#if defined(GR33N_PS3)
++/* GR33N_PS3: el saludo de servidor no se compila, por lo mismo que la rama
++ * de servidor de dtls_srtp_init(). Ver el comentario largo de alli.
++ *
++ * Lo que faltaba aqui es mbedtls_ssl_set_client_transport_id(), que va
++ * guardada por MBEDTLS_SSL_SRV_C: es la que le dice a mbedTLS de que
++ * direccion viene el cliente para poder calcular la cookie de
++ * HelloVerifyRequest. Un servidor DTLS la necesita porque, sin ella,
++ * cualquiera puede pedirle un saludo con la direccion falseada.
++ *
++ * Nosotros somos el cliente siempre -- la oferta lleva a=setup:active-- asi
++ * que esto es codigo muerto. Se deja la funcion, con la firma intacta y
++ * fallando, en vez de borrarla y tocar tambien a quien la llama: asi el
++ * parche es una sola pieza y el `if` de dtls_srtp_handshake() sigue leyendose
++ * igual que en el original. */
++static int dtls_srtp_handshake_server(DtlsSrtp* dtls_srtp) {
++  (void)dtls_srtp;
++  LOGE("GR33N_PS3: saludo DTLS de servidor, y esta consola solo puede ser "
++       "cliente. Compilado sin MBEDTLS_SSL_SRV_C a proposito.");
++  return -1;
++}
++#else
+ static int dtls_srtp_handshake_server(DtlsSrtp* dtls_srtp) {
+   int ret;
+ 
+@@ -418,10 +528,16 @@ static int dtls_srtp_handshake_server(DtlsSrtp* dtls_srtp) {
+ 
+   return ret;
+ }
++#endif /* GR33N_PS3 */
+ 
+ static int dtls_srtp_handshake_client(DtlsSrtp* dtls_srtp) {
+   int ret;
+ 
++  // A failed attempt leaves the ssl context mid-handshake and the docs
++  // require a reset before reuse (config, bio and timers are retained).
++  // Safe on a fresh context too, so do it unconditionally.
++  mbedtls_ssl_session_reset(&dtls_srtp->ssl);
++
+   ret = dtls_srtp_do_handshake(dtls_srtp);
+   if (ret != 0) {
+     LOGE("failed! mbedtls_ssl_handshake returned -0x%.4x\n\n", (unsigned int)-ret);
+@@ -476,25 +592,30 @@ void dtls_srtp_reset_session(DtlsSrtp* dtls_srtp) {
+ 
+ int dtls_srtp_write(DtlsSrtp* dtls_srtp, const unsigned char* buf, size_t len) {
+   int ret;
++  int spins = 0;
+ 
+   do {
+     ret = mbedtls_ssl_write(&dtls_srtp->ssl, buf, len);
+ 
++    // Bounded: this runs on the input-send path with the peer lock held. An
++    // ssl context that keeps asking for I/O must drop the packet (datachannel
++    // frames are periodic full-state), not spin the app into a freeze.
++    if (++spins > 1000) {
++      break;
++    }
+   } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+   return ret;
+ }
+ 
+ int dtls_srtp_read(DtlsSrtp* dtls_srtp, unsigned char* buf, size_t len) {
+-  int ret;
+-
+   memset(buf, 0, len);
+ 
+-  do {
+-    ret = mbedtls_ssl_read(&dtls_srtp->ssl, buf, len);
+-
+-  } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+-
+-  return ret;
++  // No retry loop. The bio serves exactly the one datagram the caller stashed
++  // (see peer_connection_dtls_srtp_recv): WANT_READ back means that datagram
++  // held no application data (a record mbedtls discarded), and the caller
++  // simply moves on to the next datagram. Retrying here re-read the same
++  // bytes forever and froze the worker with the peer lock held.
++  return mbedtls_ssl_read(&dtls_srtp->ssl, buf, len);
+ }
+ 
+ int dtls_srtp_probe(uint8_t* buf) {
+diff --git a/src/mdns.c b/src/mdns.c
+index 6d7881c..a28d20b 100644
+--- a/src/mdns.c
++++ b/src/mdns.c
+@@ -4,6 +4,9 @@
+ #include <string.h>
+ #include <sys/select.h>
+ #include <unistd.h>
++#ifdef GR33N_PS3
++#include <net/net.h>
++#endif
+ #include "address.h"
+ #include "socket.h"
+ #include "utils.h"
+@@ -120,9 +123,12 @@ int mdns_resolve_addr(const char* hostname, Address* addr) {
+   UdpSocket udp_socket;
+   uint8_t buf[256];
+   char addr_string[ADDRSTRLEN];
++#ifndef GR33N_PS3
+   struct timeval tv = {1, 0};
+   fd_set rfds;
+-  int maxfd, send_retry, recv_retry, size, ret;
++  int maxfd;
++#endif
++  int send_retry, recv_retry, size, ret;
+ 
+   if (udp_socket_open(&udp_socket, AF_INET, MDNS_PORT) < 0) {
+     LOGE("Failed to create socket");
+@@ -136,13 +142,34 @@ int mdns_resolve_addr(const char* hostname, Address* addr) {
+     return -1;
+   }
+ 
++#ifndef GR33N_PS3
+   maxfd = udp_socket.fd;
+   FD_ZERO(&rfds);
++#endif
+ 
+   for (send_retry = 3; send_retry > 0; send_retry--) {
+     size = mdns_build_query(hostname, buf, sizeof(buf));
+     udp_socket_sendto(&udp_socket, &mcast_addr, buf, size);
+     for (recv_retry = 5; recv_retry > 0; recv_retry--) {
++#ifdef GR33N_PS3
++      /* GR33N: netPoll, por lo mismo que en agent.c. Este camino
++       * probablemente no lo pise nunca xCloud --el mDNS es para
++       * descubrir pares en la red local-- pero dejar dentro una llamada
++       * que revienta la consola por si algun dia alguien la toca es
++       * pedirlo a gritos. El plazo del original era un timeval de {1,0}:
++       * un segundo. */
++      struct pollfd pfd;
++
++      pfd.fd = udp_socket.fd;
++      pfd.events = POLLIN;
++      pfd.revents = 0;
++
++      ret = netPoll(&pfd, 1, 1000);
++      if (ret < 0) {
++        LOGE("netPoll error");
++        break;
++      } else if (ret > 0 && (pfd.revents & POLLIN)) {
++#else
+       FD_SET(udp_socket.fd, &rfds);
+       ret = select(maxfd + 1, &rfds, NULL, NULL, &tv);
+ 
+@@ -150,6 +177,7 @@ int mdns_resolve_addr(const char* hostname, Address* addr) {
+         LOGE("select error");
+         break;
+       } else if (ret > 0 && FD_ISSET(udp_socket.fd, &rfds)) {
++#endif
+         ret = udp_socket_recvfrom(&udp_socket, NULL, buf, sizeof(buf));
+         if (!mdns_parse_answer(buf, ret, addr, hostname)) {
+           addr_to_string(addr, addr_string, sizeof(addr_string));
+diff --git a/src/peer_connection.c b/src/peer_connection.c
+index c763e80..7bf3200 100644
+--- a/src/peer_connection.c
++++ b/src/peer_connection.c
+@@ -45,6 +45,10 @@ struct PeerConnection {
+ 
+   uint32_t remote_assrc;
+   uint32_t remote_vssrc;
++
++  // Last received Sender Report, for RTCP RR LSR/DLSR (receiver liveness).
++  uint32_t rtcp_last_sr_lsr;
++  uint32_t rtcp_last_sr_time;
+ };
+ 
+ static void peer_connection_outgoing_rtp_packet(uint8_t* data, size_t size, void* user_data) {
+@@ -54,26 +58,40 @@ static void peer_connection_outgoing_rtp_packet(uint8_t* data, size_t size, void
+ }
+ 
+ static int peer_connection_dtls_srtp_recv(void* ctx, unsigned char* buf, size_t len) {
+-  int recv_max = 0;
+   int ret = -1;
+   DtlsSrtp* dtls_srtp = (DtlsSrtp*)ctx;
+   PeerConnection* pc = (PeerConnection*)dtls_srtp->user_data;
+ 
++  // Hand mbedtls the datagram peer_connection_loop already pulled off the
++  // socket -- exactly once. agent_ret must be consumed here: leaving it set
++  // re-served the same datagram on every subsequent bio call, so a record
++  // mbedtls silently discards (anti-replay duplicate after a lag spike, bad
++  // MAC) made it fetch the same bytes forever and the worker never returned
++  // from dtls_srtp_read, wedging the whole app.
+   if (pc->agent_ret > 0 && pc->agent_ret <= len) {
+-    memcpy(buf, pc->agent_buf, pc->agent_ret);
+-    return pc->agent_ret;
++    ret = pc->agent_ret;
++    pc->agent_ret = -1;
++    memcpy(buf, pc->agent_buf, ret);
++    return ret;
+   }
+ 
+-  while (recv_max < CONFIG_TLS_READ_TIMEOUT && pc->state == PEER_CONNECTION_CONNECTED) {
++  // Until the bring-up completes (pc->state reaches COMPLETED) the handshake
++  // owns the socket, so poll it here. Never gate this on dtls_srtp->state:
++  // key derivation flips that to CONNECTED in the middle of the handshake,
++  // before the server's final CCS+Finished flight arrives -- gating on it
++  // left that flight unread forever and every handshake died with -0x6800
++  // after the 7 s retransmit ladder (v1.0.29pre1). Never block and never
++  // return 0 either: mbedtls reads 0 as "connection closed" (the -0x7280 in
++  // the field logs), and blocking starves the retransmission timer in
++  // dtls_srtp_do_handshake that resends lost flights.
++  if (pc->state != PEER_CONNECTION_COMPLETED) {
+     ret = agent_recv(&pc->agent, buf, len);
+-
+-    if (ret > 0) {
+-      break;
+-    }
+-
+-    recv_max++;
++    return ret > 0 ? ret : MBEDTLS_ERR_SSL_WANT_READ;
+   }
+-  return ret;
++
++  // Data phase: the socket belongs to peer_connection_loop, never read it
++  // from inside the bio. No stashed datagram left means this read is done.
++  return MBEDTLS_ERR_SSL_WANT_READ;
+ }
+ 
+ static int peer_connection_dtls_srtp_send(void* ctx, const uint8_t* buf, size_t len) {
+@@ -92,6 +110,22 @@ static void peer_connection_incoming_rtcp(PeerConnection* pc, uint8_t* buf, size
+     rtcp_header = (RtcpHeader*)(buf + pos);
+ 
+     switch (rtcp_header->type) {
++      case RTCP_SR: {
++        // Sender Report: remember the sender's NTP timestamp (middle 32 bits)
++        // and arrival time so our Receiver Reports can reflect LSR/DLSR. Some
++        // WebRTC senders throttle/pause video without valid receiver feedback.
++        uint8_t* sr = buf + pos;
++        if (pos + 16 <= len) {
++          uint32_t ntp_sec, ntp_frac;
++          memcpy(&ntp_sec, sr + 8, 4);
++          memcpy(&ntp_frac, sr + 12, 4);
++          ntp_sec = ntohl(ntp_sec);
++          ntp_frac = ntohl(ntp_frac);
++          pc->rtcp_last_sr_lsr = (ntp_sec << 16) | (ntp_frac >> 16);
++          pc->rtcp_last_sr_time = ports_get_epoch_time();
++        }
++        break;
++      }
+       case RTCP_RR:
+         LOGD("RTCP_PR");
+         if (rtcp_header->rc > 0) {
+@@ -213,6 +247,161 @@ int peer_connection_send_video(PeerConnection* pc, const uint8_t* buf, size_t le
+   return rtp_encoder_encode(&pc->vrtp_encoder, buf, len);
+ }
+ 
++// Send an RTCP PLI (RFC 4585) asking the sender for a fresh intra frame.
++// Standard WebRTC clients do this automatically; without it xCloud only ever
++// streams P-frames and the decoder never gets a keyframe/parameter sets to
++// start from. The app-level videoKeyframeRequested message is not sufficient.
++int peer_connection_request_keyframe(PeerConnection* pc) {
++  if (pc == NULL || pc->state != PEER_CONNECTION_COMPLETED)
++    return -1;
++  uint8_t rtcp[128];
++  int len = rtcp_get_pli(rtcp, 12, htonl(pc->remote_vssrc));
++  if (len < 0)
++    return -1;
++  uint32_t sender_ssrc = htonl(SSRC_H264);
++  memcpy(rtcp + 4, &sender_ssrc, 4);  // SSRC of packet sender (us)
++  dtls_srtp_encrypt_rctp_packet(&pc->dtls_srtp, rtcp, &len);
++  return agent_send(&pc->agent, rtcp, len);
++}
++
++// ICE consent keepalive: refresh the peer's consent to send media to us.
++int peer_connection_send_consent(PeerConnection* pc) {
++  if (pc == NULL || pc->state != PEER_CONNECTION_COMPLETED)
++    return -1;
++  return agent_send_binding_request(&pc->agent);
++}
++
++// Send an RTCP Generic NACK (RFC 4585 RTPFB, FMT=1) to request retransmission
++// of lost video packets. pid = first lost sequence number; blp = bitmask of
++// the following 16 packets also lost. Lets frames complete despite loss instead
++// of dropping the whole frame and stalling.
++int peer_connection_send_nack(PeerConnection* pc, uint16_t pid, uint16_t blp) {
++  if (pc == NULL || pc->state != PEER_CONNECTION_COMPLETED)
++    return -1;
++  uint8_t rtcp[128];
++  memset(rtcp, 0, 16);
++  RtcpHeader* h = (RtcpHeader*)rtcp;
++  h->version = 2;
++  h->rc = 1;  // FMT=1 (Generic NACK)
++  h->type = RTCP_RTPFB;
++  h->length = htons(3);  // (16/4) - 1
++  uint32_t sender_ssrc = htonl(SSRC_H264);
++  uint32_t media_ssrc = htonl(pc->remote_vssrc);
++  memcpy(rtcp + 4, &sender_ssrc, 4);
++  memcpy(rtcp + 8, &media_ssrc, 4);
++  uint16_t be_pid = htons(pid);
++  uint16_t be_blp = htons(blp);
++  memcpy(rtcp + 12, &be_pid, 2);
++  memcpy(rtcp + 14, &be_blp, 2);
++  int len = 16;
++  dtls_srtp_encrypt_rctp_packet(&pc->dtls_srtp, rtcp, &len);
++  return agent_send(&pc->agent, rtcp, len);
++}
++
++// Send an RTCP REMB (Receiver Estimated Max Bitrate, PSFB FMT=15). This is the
++// bandwidth feedback a libwebrtc sender needs to raise the encoder bitrate:
++// with no REMB/transport-cc negotiated the sender pins the encoder at its
++// starvation floor and the picture is a smeared trickle. Requires
++// "a=rtcp-fb:<pt> goog-remb" in the negotiated SDP.
++int peer_connection_send_remb(PeerConnection* pc, uint32_t bitrate_bps) {
++  if (pc == NULL || pc->state != PEER_CONNECTION_COMPLETED)
++    return -1;
++  uint8_t rtcp[128];
++  memset(rtcp, 0, 24);
++  RtcpHeader* h = (RtcpHeader*)rtcp;
++  h->version = 2;
++  h->rc = 15;  // FMT=15 (Application Layer Feedback)
++  h->type = RTCP_PSFB;
++  h->length = htons(5);  // (24/4) - 1
++  uint32_t sender_ssrc = htonl(SSRC_H264);
++  memcpy(rtcp + 4, &sender_ssrc, 4);
++  // media SSRC is 0 for REMB; targets go in the FCI SSRC list.
++  rtcp[12] = 'R';
++  rtcp[13] = 'E';
++  rtcp[14] = 'M';
++  rtcp[15] = 'B';
++  rtcp[16] = 1;  // one SSRC in the list
++  // Bitrate as 6-bit exponent + 18-bit mantissa.
++  uint32_t exp = 0, mantissa = bitrate_bps;
++  while (mantissa > 0x3ffff) {
++    mantissa >>= 1;
++    exp++;
++  }
++  rtcp[17] = (uint8_t)((exp << 2) | ((mantissa >> 16) & 0x3));
++  rtcp[18] = (uint8_t)((mantissa >> 8) & 0xff);
++  rtcp[19] = (uint8_t)(mantissa & 0xff);
++  uint32_t media_ssrc = htonl(pc->remote_vssrc);
++  memcpy(rtcp + 20, &media_ssrc, 4);
++  int len = 24;
++  dtls_srtp_encrypt_rctp_packet(&pc->dtls_srtp, rtcp, &len);
++  return agent_send(&pc->agent, rtcp, len);
++}
++
++// Send a COMPOUND RTCP Receiver Report (RR + SDES/CNAME) so the WebRTC sender
++// treats us as a live, well-behaved receiver and keeps the video encoder
++// running. A bare RR (no SDES) violates RFC 3550's compound-packet rule and
++// some senders ignore it, then pause video for lack of receiver feedback.
++// Stats come from the caller's jitter buffer; LSR/DLSR reflect the last SR.
++int peer_connection_send_receiver_report(PeerConnection* pc, uint8_t fraction_lost,
++                                         uint32_t cumulative_lost, uint32_t highest_seq_ext,
++                                         uint32_t jitter) {
++  if (pc == NULL || pc->state != PEER_CONNECTION_COMPLETED)
++    return -1;
++  static const char kCname[] = "green-nx";
++  uint8_t rtcp[128];
++  memset(rtcp, 0, sizeof(rtcp));
++  uint32_t our_ssrc = htonl(SSRC_H264);
++
++  // ---- Receiver Report (32 bytes) ----
++  RtcpHeader* rr = (RtcpHeader*)rtcp;
++  rr->version = 2;
++  rr->rc = 1;  // one report block
++  rr->type = RTCP_RR;
++  rr->length = htons(7);  // (32/4) - 1
++  memcpy(rtcp + 4, &our_ssrc, 4);
++  uint32_t media_ssrc = htonl(pc->remote_vssrc);
++  memcpy(rtcp + 8, &media_ssrc, 4);
++  uint32_t flcnpl = htonl(((uint32_t)fraction_lost << 24) | (cumulative_lost & 0x00ffffff));
++  memcpy(rtcp + 12, &flcnpl, 4);
++  uint32_t be_ehsnr = htonl(highest_seq_ext);
++  memcpy(rtcp + 16, &be_ehsnr, 4);
++  uint32_t be_jitter = htonl(jitter);
++  memcpy(rtcp + 20, &be_jitter, 4);
++  uint32_t lsr = htonl(pc->rtcp_last_sr_lsr);
++  memcpy(rtcp + 24, &lsr, 4);
++  uint32_t dlsr = 0;
++  if (pc->rtcp_last_sr_time) {
++    // DLSR is in 1/65536 SECONDS; ports_get_epoch_time() is MILLISECONDS.
++    // The old "(delta_ms << 16)" was 1000x too large: the sender's RTT math
++    // (RTT = now - LSR - DLSR) went hugely negative -> wrapped to an absurd
++    // RTT -> its bandwidth estimator saw a congested link and pinned the
++    // encoder at the starvation floor. This one line was the low-bitrate bug.
++    uint32_t delta_ms = ports_get_epoch_time() - pc->rtcp_last_sr_time;
++    dlsr = htonl((uint32_t)(((uint64_t)delta_ms << 16) / 1000));
++  }
++  memcpy(rtcp + 28, &dlsr, 4);
++
++  // ---- SDES with CNAME (makes the packet a valid compound RTCP) ----
++  int sdes = 32;
++  RtcpHeader* sh = (RtcpHeader*)(rtcp + sdes);
++  sh->version = 2;
++  sh->rc = 1;  // one chunk
++  sh->type = RTCP_SDES;
++  memcpy(rtcp + sdes + 4, &our_ssrc, 4);
++  int p = sdes + 8;
++  rtcp[p++] = 1;  // CNAME item
++  rtcp[p++] = (uint8_t)(sizeof(kCname) - 1);
++  memcpy(rtcp + p, kCname, sizeof(kCname) - 1);
++  p += sizeof(kCname) - 1;
++  rtcp[p++] = 0;  // end of item list
++  while ((p - sdes) % 4 != 0) rtcp[p++] = 0;  // pad chunk to 32 bits
++  sh->length = htons(((p - sdes) / 4) - 1);
++
++  int len = p;
++  dtls_srtp_encrypt_rctp_packet(&pc->dtls_srtp, rtcp, &len);
++  return agent_send(&pc->agent, rtcp, len);
++}
++
+ int peer_connection_datachannel_send(PeerConnection* pc, char* message, size_t len) {
+   return peer_connection_datachannel_send_sid(pc, message, len, 0);
+ }
+@@ -228,6 +417,17 @@ int peer_connection_datachannel_send_sid(PeerConnection* pc, char* message, size
+     return sctp_outgoing_data(&pc->sctp, message, len, PPID_BINARY, sid);
+ }
+ 
++// Force a WebRTC "string"/DOMSTRING frame regardless of the connection's
++// default datachannel type. WebRTC peers key JSON control messages on this
++// PPID; sending them as binary makes the peer ignore them.
++int peer_connection_datachannel_send_text_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid) {
++  if (!sctp_is_connected(&pc->sctp)) {
++    LOGE("sctp not connected");
++    return -1;
++  }
++  return sctp_outgoing_data(&pc->sctp, message, len, PPID_STRING, sid);
++}
++
+ int peer_connection_create_datachannel(PeerConnection* pc, DecpChannelType channel_type, uint16_t priority, uint32_t reliability_parameter, char* label, char* protocol) {
+   return peer_connection_create_datachannel_sid(pc, channel_type, priority, reliability_parameter, label, protocol, 0);
+ }
+@@ -268,6 +468,7 @@ int peer_connection_create_datachannel_sid(PeerConnection* pc, DecpChannelType c
+   }
+ 
+   msg[0] = DATA_CHANNEL_OPEN;
++  msg[1] = channel_type;  // was left 0 -> every channel wrongly reliable/ordered
+   memcpy(msg + 2, &priority_big_endian, sizeof(uint16_t));
+   memcpy(msg + 4, &reliability_big_endian, sizeof(uint32_t));
+   memcpy(msg + 8, &label_length, sizeof(uint16_t));
+@@ -277,6 +478,20 @@ int peer_connection_create_datachannel_sid(PeerConnection* pc, DecpChannelType c
+ 
+   rtrn = sctp_outgoing_data(&pc->sctp, msg, msg_size, PPID_CONTROL, sid);
+   free(msg);
++  // Record the label->sid mapping for locally-opened channels so that
++  // peer_connection_lookup_sid()/_label() work for sends (the mapping was
++  // previously only added when a DATA_CHANNEL_OPEN was *received*).
++  if (rtrn >= 0) {
++    sctp_add_stream_mapping(&pc->sctp, label, sid);
++    // Register the policy only after the DCEP open above has gone out, so the
++    // handshake itself is never sent unreliably. Channel type bit 7 = the
++    // unordered variant; the low bits pick the partial-reliability flavour
++    // (0x01 = retransmission-limited, which is what a WebRTC channel opened
++    // with maxRetransmits uses).
++    uint8_t flavour = channel_type & 0x7f;
++    sctp_set_stream_reliability(&pc->sctp, sid, (channel_type & 0x80) != 0,
++                                flavour == 0x01, reliability_parameter);
++  }
+   return rtrn;
+ }
+ 
+@@ -325,6 +540,7 @@ int peer_connection_loop(PeerConnection* pc) {
+           peer_connection_incoming_rtcp(pc, pc->agent_buf, pc->agent_ret);
+ 
+         } else if (dtls_srtp_probe(pc->agent_buf)) {
++          int received = pc->agent_ret;
+           int ret = dtls_srtp_read(&pc->dtls_srtp, pc->temp_buf, sizeof(pc->temp_buf));
+           LOGD("Got DTLS data %d", ret);
+ 
+@@ -332,6 +548,11 @@ int peer_connection_loop(PeerConnection* pc) {
+             sctp_incoming_data(&pc->sctp, (char*)pc->temp_buf, ret);
+           }
+ 
++          // The bio consumed agent_ret; restore the datagram length so the
++          // caller's drain loop still sees a processed packet, not an empty
++          // socket.
++          pc->agent_ret = received;
++
+         } else if (rtp_packet_validate(pc->agent_buf, pc->agent_ret)) {
+           LOGD("Got RTP packet");
+ 
+@@ -342,6 +563,26 @@ int peer_connection_loop(PeerConnection* pc) {
+             rtp_decoder_decode(&pc->artp_decoder, pc->agent_buf, pc->agent_ret);
+           } else if (ssrc == pc->remote_vssrc) {
+             rtp_decoder_decode(&pc->vrtp_decoder, pc->agent_buf, pc->agent_ret);
++          } else {
++            // Fallback demux by RTP payload type. libpeer normally routes media
++            // by SSRC, learned from the answer's "a=ssrc:" lines. A home Xbox
++            // console sometimes omits a=ssrc for the audio m-section, leaving
++            // remote_assrc = 0, so every Opus packet (nonzero SSRC) matched
++            // neither branch and was dropped -> no console audio. This offer
++            // bundles exactly one recvonly audio (PT 111) and one video
++            // (PT 102) stream (see sdp.c), so demux the stray packet by its
++            // payload type and latch its SSRC; the next packet then takes the
++            // fast path above.
++            uint8_t pt = pc->agent_buf[1] & 0x7f;
++            if (pt == 111) {
++              LOGI("audio SSRC %" PRIu32 " latched by PT (no a=ssrc in answer)", ssrc);
++              pc->remote_assrc = ssrc;
++              rtp_decoder_decode(&pc->artp_decoder, pc->agent_buf, pc->agent_ret);
++            } else if (pt == 102) {
++              LOGI("video SSRC %" PRIu32 " latched by PT (no a=ssrc in answer)", ssrc);
++              pc->remote_vssrc = ssrc;
++              rtp_decoder_decode(&pc->vrtp_decoder, pc->agent_buf, pc->agent_ret);
++            }
+           }
+ 
+         } else {
+@@ -365,7 +606,9 @@ int peer_connection_loop(PeerConnection* pc) {
+       break;
+   }
+ 
+-  return 0;
++  // >0 if an inbound packet was processed this call; lets the caller drain the
++  // socket at full speed (one packet per call would drop most video packets).
++  return pc->agent_ret;
+ }
+ 
+ void peer_connection_set_remote_description(PeerConnection* pc, const char* sdp, SdpType type) {
+@@ -432,7 +675,11 @@ static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_ty
+ 
+   switch (sdp_type) {
+     case SDP_TYPE_OFFER:
+-      role = DTLS_SRTP_ROLE_SERVER;
++      /* xCloud (and most WebRTC servers) answer a=setup:passive, i.e. they are
++       * the DTLS server. The offerer must therefore be the DTLS client and
++       * advertise a=setup:active, otherwise both sides wait for a ClientHello
++       * and the handshake never starts. */
++      role = DTLS_SRTP_ROLE_CLIENT;
+       agent_clear_candidates(&pc->agent);
+       pc->agent.mode = AGENT_MODE_CONTROLLING;
+       break;
+@@ -578,6 +825,10 @@ char* peer_connection_lookup_sid_label(PeerConnection* pc, uint16_t sid) {
+ 
+ int peer_connection_add_ice_candidate(PeerConnection* pc, char* candidate) {
+   Agent* agent = &pc->agent;
++  if (agent->remote_candidates_count >= AGENT_MAX_CANDIDATES) {
++    LOGW("remote candidate list full (%d), ignoring: %s", AGENT_MAX_CANDIDATES, candidate);
++    return -1;
++  }
+   if (ice_candidate_from_description(&agent->remote_candidates[agent->remote_candidates_count], candidate, candidate + strlen(candidate)) != 0) {
+     return -1;
+   }
+diff --git a/src/peer_connection.h b/src/peer_connection.h
+index b087893..9f6ee48 100644
+--- a/src/peer_connection.h
++++ b/src/peer_connection.h
+@@ -113,10 +113,32 @@ int peer_connection_datachannel_send(PeerConnection* pc, char* message, size_t l
+ 
+ int peer_connection_datachannel_send_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid);
+ 
++// Like _send_sid but always uses the WebRTC string/DOMSTRING PPID (for JSON
++// control messages), independent of the connection's default channel type.
++int peer_connection_datachannel_send_text_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid);
++
+ int peer_connection_send_audio(PeerConnection* pc, const uint8_t* packet, size_t bytes);
+ 
+ int peer_connection_send_video(PeerConnection* pc, const uint8_t* packet, size_t bytes);
+ 
++// Send an RTCP PLI to request a fresh keyframe (intra frame) from the sender.
++int peer_connection_request_keyframe(PeerConnection* pc);
++
++// Send an RTCP Generic NACK requesting retransmission of lost video packets.
++int peer_connection_send_nack(PeerConnection* pc, uint16_t pid, uint16_t blp);
++
++// REMB bandwidth feedback (PSFB FMT=15): tells the sender how much video
++// bitrate we can receive so its encoder ramps up from the starvation floor.
++int peer_connection_send_remb(PeerConnection* pc, uint32_t bitrate_bps);
++
++// Send an ICE consent-freshness STUN binding request (keeps the peer sending).
++int peer_connection_send_consent(PeerConnection* pc);
++
++// Send an RTCP Receiver Report with the given loss/jitter stats.
++int peer_connection_send_receiver_report(PeerConnection* pc, uint8_t fraction_lost,
++                                         uint32_t cumulative_lost, uint32_t highest_seq_ext,
++                                         uint32_t jitter);
++
+ void peer_connection_set_remote_description(PeerConnection* pc, const char* sdp, SdpType sdp_type);
+ 
+ void peer_connection_set_local_description(PeerConnection* pc, const char* sdp, SdpType sdp_type);
+diff --git a/src/ports.c b/src/ports.c
+index 2346f60..4c75d26 100644
+--- a/src/ports.c
++++ b/src/ports.c
+@@ -16,6 +16,10 @@
+ #include <net/if.h>
+ #include <netdb.h>
+ #include <sys/ioctl.h>
++#if defined(GR33N_PS3)
++/* Para netGetHostByName y struct net_hostent. */
++#include <net/net.h>
++#endif
+ #endif
+ 
+ #include "ports.h"
+@@ -105,6 +109,76 @@ int ports_get_host_addr(Address* addr, const char* iface_prefix) {
+   return ret;
+ }
+ 
++#if defined(GR33N_PS3)
++/* GR33N_PS3: PSL1GHT no tiene getaddrinfo.
++ *
++ * Comprobado enlazando de verdad, no leyendo cabeceras: deps/sonda-sockets.sh
++ * dice que la consola SI trae socket, bind, connect, close, setsockopt,
++ * getsockname, send/recv, sendto/recvfrom, inet_pton, inet_ntop y las cuatro
++ * de orden de bytes -- o sea casi toda la API de BSD-- pero NO getaddrinfo
++ * ni freeaddrinfo. Lo que tiene para resolver nombres es netGetHostByName.
++ *
++ * Por eso se reescribe la funcion entera en vez de fabricar un getaddrinfo
++ * falso: struct addrinfo puede no existir siquiera en este netdb.h, y montar
++ * una lista enlazada de estructuras que quiza no estan declaradas para luego
++ * recorrerla y liberarla es mucho aparato para lo que aqui se hace, que es
++ * quedarse con la PRIMERA direccion IPv4.
++ *
++ * CUIDADO CON netGetHostByName, QUE NO ES gethostbyname. Devuelve un
++ * struct net_hostent en el que h_addr_list NO es un char**: es un u32 que
++ * contiene la direccion de una lista de u32, y cada uno de esos contiene la
++ * direccion de los cuatro bytes. Dos indirecciones a mano. No es una
++ * suposicion: es lo que hace net_tls.c:357 de GR33N, que lleva semanas
++ * resolviendo los nombres de Microsoft desde la consola.
++ *
++ * IPv6 no se contempla y esta bien: la PS3 no lo habla, CONFIG_IPV6 es 0, y
++ * la unica direccion IPv6 que da xCloud es Teredo -- un tunel sobre IPv4 que
++ * tampoco podriamos usar. */
++int ports_resolve_addr(const char* host, Address* addr) {
++  char addr_string[ADDRSTRLEN];
++  struct net_hostent* he;
++  uint32_t* lista;
++  uint32_t primera;
++
++  if (host == NULL || addr == NULL)
++    return -1;
++
++  he = netGetHostByName(host);
++  if (he == NULL) {
++    LOGE("netGetHostByName(%s) no resolvio", host);
++    return -1;
++  }
++
++  /* Solo IPv4 de 4 bytes. Cualquier otra cosa se rechaza en vez de
++   * copiarse a medias: un h_length distinto de 4 con un memcpy de 4
++   * es leer fuera. */
++  if (he->h_addrtype != AF_INET || he->h_length != 4) {
++    LOGE("%s resolvio a algo que no es IPv4 (tipo %d, %d bytes)", host,
++         he->h_addrtype, he->h_length);
++    return -1;
++  }
++
++  if (he->h_addr_list == 0) {
++    LOGE("%s resolvio sin lista de direcciones", host);
++    return -1;
++  }
++
++  lista = (uint32_t*)(uintptr_t)he->h_addr_list;
++  if (lista[0] == 0) {
++    LOGE("%s resolvio con la lista vacia", host);
++    return -1;
++  }
++
++  primera = lista[0];
++
++  addr_set_family(addr, AF_INET);
++  memcpy(&addr->sin.sin_addr, (void*)(uintptr_t)primera, 4);
++
++  addr_to_string(addr, addr_string, sizeof(addr_string));
++  LOGI("Resolved %s -> %s", host, addr_string);
++  return 0;
++}
++#else
+ int ports_resolve_addr(const char* host, Address* addr) {
+   char addr_string[ADDRSTRLEN];
+   int ret = -1;
+@@ -141,6 +215,7 @@ int ports_resolve_addr(const char* host, Address* addr) {
+   freeaddrinfo(res);
+   return ret;
+ }
++#endif /* GR33N_PS3 */
+ 
+ uint32_t ports_get_epoch_time() {
+   struct timeval tv;
+diff --git a/src/rtcp.h b/src/rtcp.h
+index f888d05..874d047 100644
+--- a/src/rtcp.h
++++ b/src/rtcp.h
+@@ -40,6 +40,23 @@ typedef struct RtcpHeader {
+ 
+ } RtcpHeader;
+ 
++#if defined(GR33N_PS3)
++/* GR33N_PS3: la misma red de seguridad que en rtp.h, y por el mismo motivo.
++ * Ver el comentario largo de alli.
++ *
++ * Aqui importa incluso mas: todo el RTCP que anade el parche de green-nx
++ * -- PLI, NACK, REMB, RR+SDES-- escribe estos campos de bits. Con la
++ * disposicion equivocada, lo que sale al cable son paquetes RTCP validos en
++ * forma pero con la version y el tipo cambiados de sitio: el servidor los
++ * tira sin contestar, y desde este lado parece que la red los pierde. */
++#if !defined(__BYTE_ORDER) || !defined(__BIG_ENDIAN)
++#error "GR33N_PS3: __BYTE_ORDER no esta definido. Falta deps/ps3-shim/endian.h en la ruta."
++#endif
++_Static_assert(__BYTE_ORDER == __BIG_ENDIAN, "GR33N_PS3: la PS3 es big-endian");
++_Static_assert(sizeof(RtcpHeader) == 4,
++               "GR33N_PS3: la cabecera RTCP son 4 bytes de cable (RFC 3550)");
++#endif /* GR33N_PS3 */
++
+ typedef struct RtcpReportBlock {
+   uint32_t ssrc;
+   uint32_t flcnpl;
+diff --git a/src/rtp.c b/src/rtp.c
+index 0a3136a..9239e67 100644
+--- a/src/rtp.c
++++ b/src/rtp.c
+@@ -220,56 +220,26 @@ int rtp_encoder_encode(RtpEncoder* rtp_encoder, const uint8_t* buf, size_t size)
+   return rtp_encoder->encode_func(rtp_encoder, (uint8_t*)buf, size);
+ }
+ 
++// Deliver the RAW RTP packet (header + payload) to the callback. Access-unit
++// reassembly, sequence-number reordering, contiguity/loss handling and
++// keyframe gating are done by the caller's jitter buffer (VideoJitterBuffer),
++// mirroring green-vita. libpeer's own in-arrival-order NALU assembly corrupted
++// frames on any reorder/loss and produced green garbage, so it is bypassed.
+ static int rtp_decode_h264(RtpDecoder* rtp_decoder, uint8_t* buf, size_t size) {
+-  static const uint32_t nalu_start_4bytecode = 0x01000000;
+-  static uint8_t nalu_buf[CONFIG_MAX_NALU_SIZE];
+-  static int offset = 0;
+-  RtpPacket* rtp_packet = (RtpPacket*)buf;
+-  uint8_t nalu_type = *rtp_packet->payload & 0x1f;
+-  int payload_size = size - sizeof(RtpHeader);
+-  if (nalu_type > 0 && nalu_type < 24) {
+-    // NALU type 1-23 are single NALUs
+-    memcpy(nalu_buf, &nalu_start_4bytecode, sizeof(nalu_start_4bytecode));
+-    offset = sizeof(nalu_start_4bytecode);
+-    memcpy(nalu_buf + offset, rtp_packet->payload, payload_size);
+-    offset += payload_size;
+-    if (rtp_decoder->on_packet != NULL) {
+-      rtp_decoder->on_packet(nalu_buf, offset, rtp_decoder->user_data);
+-    }
+-    return (int)size;
+-  } else {
+-    NaluHeader* fu_indicator = (NaluHeader*)rtp_packet->payload;
+-    FuHeader* fu_header = (FuHeader*)(rtp_packet->payload + sizeof(NaluHeader));
+-    uint8_t reconstructed_nalu_type = (fu_indicator->f << 7) |
+-                                      (fu_indicator->nri << 5) |
+-                                      fu_header->type;
+-    payload_size -= sizeof(NaluHeader) + sizeof(FuHeader);
+-    if (fu_header->s) {
+-      memcpy(nalu_buf, &nalu_start_4bytecode, sizeof(nalu_start_4bytecode));
+-      offset = sizeof(nalu_start_4bytecode);
+-      memcpy(nalu_buf + offset, &reconstructed_nalu_type, 1);
+-      offset += 1;
+-      memcpy(nalu_buf + offset, rtp_packet->payload + 2, payload_size);
+-      offset += payload_size;
+-    } else if (offset < CONFIG_MAX_NALU_SIZE) {
+-      memcpy(nalu_buf + offset, rtp_packet->payload + 2, payload_size);
+-      offset += payload_size;
+-      if (fu_header->e) {
+-        // end of fragmented NALU
+-        if (rtp_decoder->on_packet != NULL) {
+-          rtp_decoder->on_packet(nalu_buf, offset, rtp_decoder->user_data);
+-        }
+-        offset = 0;  // reset for next NALU
+-      }
+-    }
+-  }
+-  return 0;
++  if (rtp_decoder->on_packet != NULL)
++    rtp_decoder->on_packet(buf, size, rtp_decoder->user_data);
++  return (int)size;
+ }
+ 
+ static int rtp_decode_generic(RtpDecoder* rtp_decoder, uint8_t* buf, size_t size) {
+-  RtpPacket* rtp_packet = (RtpPacket*)buf;
++  // Deliver the whole RTP packet (header + payload) to the callback, mirroring
++  // rtp_decode_h264. The caller parses the header itself because it needs the
++  // sequence number to reorder audio packets before decoding: Opus is stateful,
++  // so decoding out of order is audible. The previous behaviour stripped only a
++  // fixed 12-byte header, which threw away the sequence number and mishandled
++  // any CSRC list or header extension.
+   if (rtp_decoder->on_packet != NULL)
+-    rtp_decoder->on_packet(rtp_packet->payload, size - sizeof(RtpHeader), rtp_decoder->user_data);
++    rtp_decoder->on_packet(buf, size, rtp_decoder->user_data);
+   // even if there is no callback set, assume everything is ok for caller and do not return an error
+   return (int)size;
+ }
+diff --git a/src/rtp.h b/src/rtp.h
+index 4f94614..2ba374e 100644
+--- a/src/rtp.h
++++ b/src/rtp.h
+@@ -57,6 +57,53 @@ typedef struct RtpHeader {
+ 
+ } RtpHeader;
+ 
++#if defined(GR33N_PS3)
++/* GR33N_PS3: LAS TRES LINEAS QUE IMPIDEN EL PEOR FALLO POSIBLE AQUI.
++ *
++ * La estructura de arriba esta declarada DOS VECES y se elige con
++ * __BYTE_ORDER. Las dos ramas son correctas -- se verificaron a mano-- pero
++ * todo depende de que esa macro resuelva bien, y el preambulo de este
++ * fichero la saca de <endian.h>, que newlib no trae en la version de glibc.
++ * La pone deps/ps3-shim/endian.h.
++ *
++ * Y hay una trampa concreta esperando: el CMakeLists.txt original de
++ * libpeer, en su rama de ESP32, lleva literalmente
++ *
++ *     add_definitions(... "-D__BYTE_ORDER=__LITTLE_ENDIAN" ...)
++ *
++ * Ese es el copy-paste que uno hace a las dos de la manana cuando
++ * <endian.h> no compila. Y en una maquina big-endian elegiria la
++ * disposicion de little-endian en silencio: todas las cabeceras RTP y RTCP
++ * mal leidas, rtp_packet_validate() clasificando mal cada paquete, y no hay
++ * video. Sin un solo aviso del compilador.
++ *
++ * QUIEN CAZA ESE CASO ES ps3-shim/endian.h, NO ESTA ASERCION, y conviene
++ * saberlo. Se probo a romperlo a proposito compilando con
++ * -D__BYTE_ORDER=__LITTLE_ENDIAN, y estas dos lineas no saltaron: el shim
++ * ve el -D, comprueba que contradice lo que dice el compilador, y se planta
++ * antes. (Antes de esa prueba el shim lo TAPABA en silencio, que salia bien
++ * por accidente; ahora falla a proposito.)
++ *
++ * Estas se quedan igualmente, y no sobran: cubren el caso de que alguien
++ * saque el shim de la ruta o cambie de sitio la cabecera de orden de bytes.
++ * Dos redes por debajo de un fallo que no da sintomas es lo razonable.
++ *
++ * Los tamanos tambien se comprueban: 12 bytes de cabecera RTP es formato de
++ * cable (RFC 3550), y si un compilador metiera relleno entre los campos de
++ * bits y seq_number, la estructura dejaria de calzar sobre los bytes que
++ * llegan -- otro fallo silencioso, y del mismo tipo que el __packed de
++ * netinet/ip.h. csrc[0] no ocupa. */
++#if !defined(__BYTE_ORDER) || !defined(__BIG_ENDIAN)
++#error "GR33N_PS3: __BYTE_ORDER no esta definido. Falta deps/ps3-shim/endian.h en la ruta."
++#endif
++_Static_assert(__BYTE_ORDER == __BIG_ENDIAN,
++               "GR33N_PS3: la PS3 es big-endian. Si esto salta, alguien ha "
++               "puesto -D__BYTE_ORDER=__LITTLE_ENDIAN copiandolo de la rama "
++               "de ESP32, y no habria dado error nunca.");
++_Static_assert(sizeof(RtpHeader) == 12,
++               "GR33N_PS3: la cabecera RTP son 12 bytes de cable (RFC 3550)");
++#endif /* GR33N_PS3 */
++
+ typedef struct RtpPacket {
+   RtpHeader header;
+   uint8_t payload[0];
+diff --git a/src/sctp.c b/src/sctp.c
+index 644f8d8..db225f7 100644
+--- a/src/sctp.c
++++ b/src/sctp.c
+@@ -1,5 +1,6 @@
+ #include <stdlib.h>
+ #include <string.h>
++#include <unistd.h>
+ 
+ #include "dtls_srtp.h"
+ #include "sctp.h"
+@@ -104,6 +105,28 @@ int sctp_outgoing_data(Sctp* sctp, char* buf, size_t len, SctpDataPpid ppid, uin
+   spa.sendv_sndinfo.snd_flags = SCTP_EOR;
+   spa.sendv_sndinfo.snd_ppid = htonl(ppid);
+ 
++  // Honour the channel's negotiated delivery policy for data (never for the
++  // DCEP handshake, which has to arrive). An unreliable unordered channel
++  // otherwise behaved as reliable+ordered here, which is what turned a lag
++  // spike into a permanently wedged input channel: frames could not be
++  // dropped, so the send buffer filled (EAGAIN) and the peer had to receive
++  // every stale frame in order before any fresh one.
++  if (ppid != DATA_CHANNEL_PPID_CONTROL) {
++    int i;
++    for (i = 0; i < sctp->stream_count; i++) {
++      if (sctp->stream_table[i].sid != sid)
++        continue;
++      if (sctp->stream_table[i].unordered)
++        spa.sendv_sndinfo.snd_flags |= SCTP_UNORDERED;
++      if (sctp->stream_table[i].partial_reliable) {
++        spa.sendv_flags |= SCTP_SEND_PRINFO_VALID;
++        spa.sendv_prinfo.pr_policy = SCTP_PR_SCTP_RTX;
++        spa.sendv_prinfo.pr_value = sctp->stream_table[i].max_retransmits;
++      }
++      break;
++    }
++  }
++
+   res = usrsctp_sendv(sctp->sock, buf, len, NULL, 0, &spa, sizeof(spa), SCTP_SENDV_SPA, 0);
+   if (res < 0) {
+     LOGE("sctp sendv error %d: %s", errno, strerror(errno));
+@@ -169,6 +192,18 @@ void sctp_add_stream_mapping(Sctp* sctp, const char* label, uint16_t sid) {
+     LOGE("Stream table full. Cannot add more streams.");
+ }
+ 
++void sctp_set_stream_reliability(Sctp* sctp, uint16_t sid, int unordered, int partial_reliable, uint32_t max_retransmits) {
++  int i;
++  for (i = 0; i < sctp->stream_count; i++) {
++    if (sctp->stream_table[i].sid != sid)
++      continue;
++    sctp->stream_table[i].unordered = unordered ? 1 : 0;
++    sctp->stream_table[i].partial_reliable = partial_reliable ? 1 : 0;
++    sctp->stream_table[i].max_retransmits = max_retransmits;
++    return;
++  }
++}
++
+ void sctp_parse_data_channel_open(Sctp* sctp, uint16_t sid, char* data, size_t length) {
+   if (length < 12)
+     return;  // Not enough data for a DATA_CHANNEL_OPEN message
+@@ -498,7 +533,19 @@ void sctp_usrsctp_init() {
+ 
+ void sctp_usrsctp_deinit() {
+ #if CONFIG_USE_USRSCTP
+-  usrsctp_finish();
++  /* usrsctp_init() starts two service threads ("SCTP timer" and "SCTP
++   * iterator") that only stop inside usrsctp_finish(). It refuses with -1
++   * while an endpoint is still on the list -- a just-closed association
++   * lingers briefly -- so keep asking for up to a second. Leaving the threads
++   * running is not an option on Switch: they outlive main() and fault the
++   * instant hbloader unmaps the NRO. */
++  int attempt;
++  for (attempt = 0; attempt < 50; attempt++) {
++    if (usrsctp_finish() == 0)
++      return;
++    usleep(20 * 1000);
++  }
++  LOGW("usrsctp_finish() never completed; its threads are still running");
+ #endif
+ }
+ 
+diff --git a/src/sctp.h b/src/sctp.h
+index 1116996..e9e3856 100644
+--- a/src/sctp.h
++++ b/src/sctp.h
+@@ -140,11 +140,20 @@ typedef enum SctpDataPpid {
+ 
+ } SctpDataPpid;
+ 
+-#define SCTP_MAX_STREAMS 5
++#define SCTP_MAX_STREAMS 16
+ 
+ typedef struct {
+   char label[32];  // Stream label
+   uint16_t sid;    // Stream ID
++  // Per-stream delivery policy, taken from the DCEP channel type the channel
++  // was opened with. Without this every send went out reliable+ordered no
++  // matter what the channel negotiated: a high-rate unreliable channel (game
++  // input at 125 Hz) then piles undroppable frames up behind a loss, filling
++  // the send buffer (sendv EAGAIN storms) and forcing the peer to wait for
++  // ancient frames before it sees current ones.
++  uint8_t unordered;         // send with SCTP_UNORDERED
++  uint8_t partial_reliable;  // apply the PR-SCTP retransmission limit below
++  uint32_t max_retransmits;  // pr_value for SCTP_PR_SCTP_RTX
+ } SctpStreamEntry;
+ 
+ typedef struct Sctp {
+@@ -182,6 +191,13 @@ void sctp_incoming_data(Sctp* sctp, char* buf, size_t len);
+ 
+ int sctp_outgoing_data(Sctp* sctp, char* buf, size_t len, SctpDataPpid ppid, uint16_t sid);
+ 
++void sctp_add_stream_mapping(Sctp* sctp, const char* label, uint16_t sid);
++
++// Applies a channel's negotiated delivery policy to everything sent on that
++// stream afterwards (see SctpStreamEntry). Call once the channel is open: the
++// DCEP handshake itself must stay reliable and ordered.
++void sctp_set_stream_reliability(Sctp* sctp, uint16_t sid, int unordered, int partial_reliable, uint32_t max_retransmits);
++
+ void sctp_onmessage(Sctp* sctp, void (*onmessage)(char* msg, size_t len, void* userdata, uint16_t sid));
+ 
+ void sctp_onopen(Sctp* sctp, void (*onopen)(void* userdata));
+diff --git a/src/sdp.c b/src/sdp.c
+index b7661a4..194121c 100644
+--- a/src/sdp.c
++++ b/src/sdp.c
+@@ -27,16 +27,27 @@ void sdp_reset(char* sdp) {
+ }
+ 
+ void sdp_append_h264(char* sdp) {
+-  sdp_append(sdp, "m=video 9 UDP/TLS/RTP/SAVPF 96");
++  // This section mirrors the offer of a known-good native xCloud client
++  // (payload 102, recvonly, the Android-app fmtp template WITH
++  // packetization-mode/max-fs/max-mbps). xCloud pattern-matches the video
++  // m-line against per-device codec templates: half-matching lines get the
++  // video track rejected ("m=video 0"), and a template miss without
++  // packetization-mode lands in a minimal-capability fallback whose encoder
++  // is pinned to single-NALU packets at a starvation bitrate (~150 kbps).
++  sdp_append(sdp, "m=video 9 UDP/TLS/RTP/SAVPF 102");
+   sdp_append(sdp, "c=IN IP4 0.0.0.0");
+-  sdp_append(sdp, "a=rtcp-fb:96 nack");
+-  sdp_append(sdp, "a=rtcp-fb:96 nack pli");
+-  sdp_append(sdp, "a=fmtp:96 profile-level-id=42e01f;level-asymmetry-allowed=1");
+-  sdp_append(sdp, "a=rtpmap:96 H264/90000");
+-  sdp_append(sdp, "a=ssrc:1 cname:webrtc-h264");
+-  sdp_append(sdp, "a=sendrecv");
+   sdp_append(sdp, "a=mid:video");
+   sdp_append(sdp, "a=rtcp-mux");
++  sdp_append(sdp, "a=rtcp-rsize");
++  sdp_append(sdp, "a=rtpmap:102 H264/90000");
++  sdp_append(sdp,
++             "a=fmtp:102 level-asymmetry-allowed=0;packetization-mode=1;"
++             "profile-level-id=42e01f;max-fs=3600;max-mbps=108000");
++  sdp_append(sdp, "a=rtcp-fb:102 goog-remb");
++  sdp_append(sdp, "a=rtcp-fb:102 ccm fir");
++  sdp_append(sdp, "a=rtcp-fb:102 nack");
++  sdp_append(sdp, "a=rtcp-fb:102 nack pli");
++  sdp_append(sdp, "a=recvonly");
+ }
+ 
+ void sdp_append_pcma(char* sdp) {
+@@ -60,13 +71,15 @@ void sdp_append_pcmu(char* sdp) {
+ }
+ 
+ void sdp_append_opus(char* sdp) {
+-  sdp_append(sdp, "m=audio 9 UDP/TLS/RTP/SAVP 111");
++  // Mirrors the known-good native client: SAVPF, stereo fmtp, recvonly.
++  sdp_append(sdp, "m=audio 9 UDP/TLS/RTP/SAVPF 111");
+   sdp_append(sdp, "c=IN IP4 0.0.0.0");
+-  sdp_append(sdp, "a=rtpmap:111 opus/48000/2");
+-  sdp_append(sdp, "a=ssrc:6 cname:webrtc-opus");
+-  sdp_append(sdp, "a=sendrecv");
+   sdp_append(sdp, "a=mid:audio");
+   sdp_append(sdp, "a=rtcp-mux");
++  sdp_append(sdp, "a=rtcp-rsize");
++  sdp_append(sdp, "a=rtpmap:111 opus/48000/2");
++  sdp_append(sdp, "a=fmtp:111 minptime=10;useinbandfec=1;stereo=1");
++  sdp_append(sdp, "a=recvonly");
+ }
+ 
+ void sdp_append_datachannel(char* sdp) {
+diff --git a/src/socket.c b/src/socket.c
+index 6f7d8ef..f920831 100644
+--- a/src/socket.c
++++ b/src/socket.c
+@@ -5,6 +5,63 @@
+ #include "socket.h"
+ #include "utils.h"
+ 
++#ifdef GR33N_PS3
++#include <net/net.h>
++
++/* PSL1GHT TIENE DOS FAMILIAS DE RED Y NO COMPARTEN DESCRIPTORES.
++ *
++ * Esto no es una preferencia de estilo: esta medido. El mismo programa,
++ * la misma espera, cambiando solo la funcion con la que se pide el
++ * socket (WEBRTC_DEBUG, 2026-09-03):
++ *
++ *   socket()    -> fd = 1073741869 (0x4000002D)
++ *                  netPoll contesta revents=0x20 (POLLNVAL) en 3 us
++ *   netSocket() -> fd = 46
++ *                  netPoll espera 200058 us de los 200000 pedidos y
++ *                  devuelve 0, que es lo correcto
++ *
++ * O sea que la familia POSIX de PSL1GHT reparte unos numeros y la suya
++ * reparte otros, y netPoll solo entiende los segundos. Un descriptor de
++ * 0x4000002D no le "suena": no es que no tenga datos, es que no existe
++ * para el.
++ *
++ * Y de paso explica el desastre de select. Un fd_set de PSL1GHT tiene
++ * sitio para 512 descriptores; el 46 de netSocket cabe de sobra y
++ * FD_SET(46, ...) no habria roto nada. Lo que reventaba la consola era
++ * meter en FD_SET el 0x40000026 que devuelve socket(). El problema
++ * nunca fue "select no sirve en la PS3": era MEZCLAR LAS DOS FAMILIAS,
++ * que es lo que hacia libpeer sin saberlo.
++ *
++ * Por eso todas las llamadas de este fichero pasan por la familia net*.
++ * Es el UNICO sitio de libpeer con llamadas de red -- los demas ficheros
++ * usan estas funciones-- asi que cambiando aqui queda coherente entero.
++ *
++ * Nombres GR_* en vez de "#define socket netSocket" a proposito: un
++ * macro que se llame igual que una funcion estandar se cuela en sitios
++ * donde no toca, y el dia que muerda no se ve. Estos cantan. */
++#define GR_SOCKET(a, b, c)              netSocket((a), (b), (c))
++#define GR_BIND(a, b, c)                netBind((a), (b), (c))
++#define GR_CONNECT(a, b, c)             netConnect((a), (b), (c))
++#define GR_CLOSE(a)                     netClose((a))
++#define GR_SEND(a, b, c, d)             netSend((a), (b), (c), (d))
++#define GR_RECV(a, b, c, d)             netRecv((a), (b), (c), (d))
++#define GR_SENDTO(a, b, c, d, e, f)     netSendTo((a), (b), (c), (d), (e), (f))
++#define GR_RECVFROM(a, b, c, d, e, f)   netRecvFrom((a), (b), (c), (d), (e), (f))
++#define GR_SETSOCKOPT(a, b, c, d, e)    netSetSockOpt((a), (b), (c), (d), (e))
++#define GR_GETSOCKNAME(a, b, c)         netGetSockName((a), (b), (c))
++#else
++#define GR_SOCKET(a, b, c)              socket((a), (b), (c))
++#define GR_BIND(a, b, c)                bind((a), (b), (c))
++#define GR_CONNECT(a, b, c)             connect((a), (b), (c))
++#define GR_CLOSE(a)                     close((a))
++#define GR_SEND(a, b, c, d)             send((a), (b), (c), (d))
++#define GR_RECV(a, b, c, d)             recv((a), (b), (c), (d))
++#define GR_SENDTO(a, b, c, d, e, f)     sendto((a), (b), (c), (d), (e), (f))
++#define GR_RECVFROM(a, b, c, d, e, f)   recvfrom((a), (b), (c), (d), (e), (f))
++#define GR_SETSOCKOPT(a, b, c, d, e)    setsockopt((a), (b), (c), (d), (e))
++#define GR_GETSOCKNAME(a, b, c)         getsockname((a), (b), (c))
++#endif
++
+ int udp_socket_add_multicast_group(UdpSocket* udp_socket, Address* mcast_addr) {
+   int ret = 0;
+   struct ip_mreq imreq = {0};
+@@ -14,12 +71,12 @@ int udp_socket_add_multicast_group(UdpSocket* udp_socket, Address* mcast_addr) {
+   // IPV4 only
+   imreq.imr_multiaddr.s_addr = mcast_addr->sin.sin_addr.s_addr;
+ 
+-  if ((ret = setsockopt(udp_socket->fd, IPPROTO_IP, IP_MULTICAST_IF, &iaddr, sizeof(struct in_addr))) < 0) {
++  if ((ret = GR_SETSOCKOPT(udp_socket->fd, IPPROTO_IP, IP_MULTICAST_IF, &iaddr, sizeof(struct in_addr))) < 0) {
+     LOGE("Failed to set IP_MULTICAST_IF: %d", ret);
+     return ret;
+   }
+ 
+-  if ((ret = setsockopt(udp_socket->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(struct ip_mreq))) < 0) {
++  if ((ret = GR_SETSOCKOPT(udp_socket->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(struct ip_mreq))) < 0) {
+     LOGE("Failed to set IP_ADD_MEMBERSHIP: %d", ret);
+     return ret;
+   }
+@@ -36,7 +93,7 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+   udp_socket->bind_addr.family = family;
+   switch (family) {
+     case AF_INET6:
+-      udp_socket->fd = socket(AF_INET6, SOCK_DGRAM, 0);
++      udp_socket->fd = GR_SOCKET(AF_INET6, SOCK_DGRAM, 0);
+       udp_socket->bind_addr.sin6.sin6_family = AF_INET6;
+       udp_socket->bind_addr.sin6.sin6_port = htons(port);
+       udp_socket->bind_addr.sin6.sin6_addr = in6addr_any;
+@@ -46,7 +103,7 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+       break;
+     case AF_INET:
+     default:
+-      udp_socket->fd = socket(AF_INET, SOCK_DGRAM, 0);
++      udp_socket->fd = GR_SOCKET(AF_INET, SOCK_DGRAM, 0);
+       udp_socket->bind_addr.sin.sin_family = AF_INET;
+       udp_socket->bind_addr.sin.sin_port = htons(port);
+       udp_socket->bind_addr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
+@@ -61,16 +118,23 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+   }
+ 
+   do {
+-    if ((ret = setsockopt(udp_socket->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) < 0) {
++    if ((ret = GR_SETSOCKOPT(udp_socket->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse))) < 0) {
+       LOGW("reuse failed. ignore");
+     }
+ 
+-    if ((ret = bind(udp_socket->fd, sa, sock_len)) < 0) {
++    // Large receive buffer so a burst (e.g. a multi-hundred-KB keyframe) is not
++    // dropped before the worker can drain it.
++    int rcvbuf = 4 * 1024 * 1024;
++    if (GR_SETSOCKOPT(udp_socket->fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
++      LOGW("SO_RCVBUF failed. ignore");
++    }
++
++    if ((ret = GR_BIND(udp_socket->fd, sa, sock_len)) < 0) {
+       LOGE("Failed to bind socket: %d", ret);
+       break;
+     }
+ 
+-    if (getsockname(udp_socket->fd, sa, &sock_len) < 0) {
++    if (GR_GETSOCKNAME(udp_socket->fd, sa, &sock_len) < 0) {
+       LOGE("Get socket info failed");
+       break;
+     }
+@@ -96,7 +160,7 @@ int udp_socket_open(UdpSocket* udp_socket, int family, int port) {
+ 
+ void udp_socket_close(UdpSocket* udp_socket) {
+   if (udp_socket->fd > 0) {
+-    close(udp_socket->fd);
++    GR_CLOSE(udp_socket->fd);
+   }
+ }
+ 
+@@ -124,7 +188,7 @@ int udp_socket_sendto(UdpSocket* udp_socket, Address* addr, const uint8_t* buf,
+       break;
+   }
+ 
+-  if ((ret = sendto(udp_socket->fd, buf, len, 0, sa, sock_len)) < 0) {
++  if ((ret = GR_SENDTO(udp_socket->fd, buf, len, 0, sa, sock_len)) < 0) {
+     LOGE("Failed to sendto: %s", strerror(errno));
+     return -1;
+   }
+@@ -158,7 +222,7 @@ int udp_socket_recvfrom(UdpSocket* udp_socket, Address* addr, uint8_t* buf, int
+       break;
+   }
+ 
+-  if ((ret = recvfrom(udp_socket->fd, buf, len, 0, sa, &sock_len)) < 0) {
++  if ((ret = GR_RECVFROM(udp_socket->fd, buf, len, 0, sa, &sock_len)) < 0) {
+     LOGE("Failed to recvfrom: %s", strerror(errno));
+     return -1;
+   }
+@@ -186,11 +250,11 @@ int tcp_socket_open(TcpSocket* tcp_socket, int family) {
+   tcp_socket->bind_addr.family = family;
+   switch (family) {
+     case AF_INET6:
+-      tcp_socket->fd = socket(AF_INET6, SOCK_STREAM, 0);
++      tcp_socket->fd = GR_SOCKET(AF_INET6, SOCK_STREAM, 0);
+       break;
+     case AF_INET:
+     default:
+-      tcp_socket->fd = socket(AF_INET, SOCK_STREAM, 0);
++      tcp_socket->fd = GR_SOCKET(AF_INET, SOCK_STREAM, 0);
+       break;
+   }
+ 
+@@ -228,7 +292,7 @@ int tcp_socket_connect(TcpSocket* tcp_socket, Address* addr) {
+ 
+   addr_to_string(addr, addr_string, sizeof(addr_string));
+   LOGI("Connecting to server: %s:%d", addr_string, addr->port);
+-  if ((ret = connect(tcp_socket->fd, sa, sock_len)) < 0) {
++  if ((ret = GR_CONNECT(tcp_socket->fd, sa, sock_len)) < 0) {
+     LOGE("Failed to connect to server");
+     return -1;
+   }
+@@ -239,7 +303,7 @@ int tcp_socket_connect(TcpSocket* tcp_socket, Address* addr) {
+ 
+ void tcp_socket_close(TcpSocket* tcp_socket) {
+   if (tcp_socket->fd > 0) {
+-    close(tcp_socket->fd);
++    GR_CLOSE(tcp_socket->fd);
+   }
+ }
+ 
+@@ -251,7 +315,7 @@ int tcp_socket_send(TcpSocket* tcp_socket, const uint8_t* buf, int len) {
+     return -1;
+   }
+ 
+-  ret = send(tcp_socket->fd, buf, len, 0);
++  ret = GR_SEND(tcp_socket->fd, buf, len, 0);
+   if (ret < 0) {
+     LOGE("Failed to send: %s", strerror(errno));
+     return -1;
+@@ -267,7 +331,7 @@ int tcp_socket_recv(TcpSocket* tcp_socket, uint8_t* buf, int len) {
+     return -1;
+   }
+ 
+-  ret = recv(tcp_socket->fd, buf, len, 0);
++  ret = GR_RECV(tcp_socket->fd, buf, len, 0);
+   if (ret < 0) {
+     LOGE("Failed to recv: %s", strerror(errno));
+     return -1;
+diff --git a/src/ssl_transport.c b/src/ssl_transport.c
+index 9847616..c5a287b 100644
+--- a/src/ssl_transport.c
++++ b/src/ssl_transport.c
+@@ -9,12 +9,46 @@
+ #include "mbedtls/ssl.h"
+ 
+ #include <sys/select.h>
++#ifdef GR33N_PS3
++#include <net/net.h>
++#endif
+ #include "config.h"
+ #include "ports.h"
+ #include "ssl_transport.h"
+ #include "utils.h"
+ 
+ static int ssl_transport_mbedtls_recv_timeout(void* ctx, unsigned char* buf, size_t len, uint32_t timeout) {
++#ifdef GR33N_PS3
++  /* GR33N: netPoll en vez de select. El motivo largo esta en
++   * agent.c:agent_socket_recv; en corto, los descriptores de la PS3 son
++   * numeros de mil millones y FD_SET los convierte en una escritura
++   * fuera de la pila. Aqui ademas viene de perlas porque netPoll ya
++   * cuenta en milisegundos, que es la unidad en la que mbedTLS pasa el
++   * plazo: se acabo el reparto en timeval.
++   *
++   * Se devuelve 0 al vencer el plazo, igual que el original, y no
++   * MBEDTLS_ERR_SSL_TIMEOUT: cambiar eso cambiaria como reacciona
++   * mbedTLS, y esto es un port, no un rediseno. */
++  int ret;
++  struct pollfd pfd;
++
++  pfd.fd = ((TcpSocket*)ctx)->fd;
++  pfd.events = POLLIN;
++  pfd.revents = 0;
++
++  ret = netPoll(&pfd, 1, (int)timeout);
++  if (ret < 0) {
++    return -1;
++  } else if (ret == 0) {
++    // timeout
++  } else {
++    if (pfd.revents & POLLIN) {
++      ret = tcp_socket_recv((TcpSocket*)ctx, buf, len);
++    }
++  }
++
++  return ret;
++#else
+   int ret;
+   fd_set read_fds;
+   struct timeval tv;
+@@ -36,6 +70,7 @@ static int ssl_transport_mbedtls_recv_timeout(void* ctx, unsigned char* buf, siz
+   }
+ 
+   return ret;
++#endif
+ }
+ 
+ static int ssl_transport_mbedlts_send(void* ctx, const uint8_t* buf, size_t len) {
+diff --git a/src/utils.c b/src/utils.c
+index 020b8ac..e071b7d 100644
+--- a/src/utils.c
++++ b/src/utils.c
+@@ -6,6 +6,67 @@
+ #include <time.h>
+ #include "mbedtls/md.h"
+ 
++#ifdef GR33N_PS3
++#include "mbedtls/entropy.h"
++
++/* POR QUE mbedtls_entropy_func Y NO mbedtls_hardware_poll A PELO.
++ *
++ * La primera version de esto incluia "mbedtls/entropy_poll.h" para
++ * llamar directamente a mbedtls_hardware_poll, que es lo que GR33N
++ * implementa sobre sysGetRandomNumber. No compila: en mbedTLS 3.x esa
++ * cabecera es INTERNA, vive en library/ y no se instala. Solo
++ * mbedtls/entropy.h es publica.
++ *
++ * Y llamarla igualmente con un prototipo escrito a mano habria sido
++ * repetir el error de siempre: en C no hay decoracion de nombres, asi
++ * que un prototipo equivocado enlaza tan ricamente y lo que sale roto es
++ * la entropia, en silencio.
++ *
++ * mbedtls_entropy_func es la puerta de delante, y acaba en el mismo
++ * sitio: con MBEDTLS_NO_PLATFORM_ENTROPY y MBEDTLS_ENTROPY_HARDWARE_ALT
++ * puestos en ps3_mbedtls_config.h, la unica fuente registrada es la
++ * nuestra. Cuesta un contexto en la pila y dos llamadas por conexion.
++ *
++ * El #error de abajo se queda: sin HARDWARE_ALT no habria NINGUNA fuente
++ * registrada, y eso hay que verlo al compilar y no descubrirlo cuando
++ * alguien adivine una credencial. */
++#if !defined(MBEDTLS_ENTROPY_HARDWARE_ALT)
++#error "falta MBEDTLS_ENTROPY_HARDWARE_ALT: sin esa fuente mbedtls_entropy_func no tiene de donde sacar nada y las credenciales de ICE saldrian de la nada. Comprueba que -DMBEDTLS_USER_CONFIG_FILE llega a la compilacion de libpeer."
++#endif
++#endif
++
++/* GR33N: de aqui salen las credenciales de ICE, y el original las sacaba
++ * de un reloj.
++ *
++ * COMO SE VIO. Volcando la oferta SDP entera al log de depuracion:
++ *
++ *   a=ice-ufrag:WNmk
++ *   a=ice-pwd:WNmkvOKUIPhBmCEABPFIaKRd
++ *
++ * La contrasena EMPIEZA por el usuario. No es casualidad: agent.c llama
++ * dos veces seguidas a esta funcion, y la version de arriba hacia
++ * srand(time(NULL)) DENTRO. Dos llamadas en el mismo segundo = misma
++ * semilla = misma secuencia, y la segunda repite los cuatro caracteres
++ * de la primera antes de seguir.
++ *
++ * POR QUE IMPORTA. La ice-pwd no es un adorno: es la clave con la que se
++ * firman (HMAC-SHA1) los STUN de comprobacion de conectividad. Sacada de
++ * time(NULL) tiene resolucion de UN SEGUNDO, o sea que quien sepa
++ * aproximadamente cuando arranco la conexion puede calcularla. Y ademas
++ * dos conexiones dentro del mismo segundo salen identicas.
++ *
++ * DE DONDE SALE AHORA. De mbedtls_hardware_poll, que en la PS3 lo
++ * implementa GR33N (source/net_tls.c) sobre sysGetRandomNumber, el
++ * generador de lv2, con su comprobacion de que lo devuelto no sea todo
++ * ceros. Es el mismo sitio del que ya salen las claves de TLS, asi que
++ * no se anade ninguna dependencia nueva: libpeer ya llama a codigo de
++ * GR33N por peer_log.
++ *
++ * Y con rechazo, no con modulo a secas: 62 no divide a 256, asi que
++ * "byte % 62" saca los primeros caracteres del alfabeto algo mas a
++ * menudo que los ultimos. Para una contrasena eso es regalar bits. Se
++ * tiran los bytes de 248 para arriba (248 = 4*62) y el resto reparte
++ * parejo. */
+ void utils_random_string(char* s, const int len) {
+   int i;
+ 
+@@ -14,6 +75,47 @@ void utils_random_string(char* s, const int len) {
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+       "abcdefghijklmnopqrstuvwxyz";
+ 
++#ifdef GR33N_PS3
++  const int base = (int)(sizeof(alphanum) - 1); /* 62 */
++  const unsigned char corte = (unsigned char)(256 - (256 % 62)); /* 248 */
++  int recargas = 0;
++  mbedtls_entropy_context ent;
++
++  mbedtls_entropy_init(&ent);
++
++  i = 0;
++  while (i < len) {
++    /* De golpe no se puede pedir mas de un bloque: mbedtls_entropy_func
++     * devuelve error si len > MBEDTLS_ENTROPY_BLOCK_SIZE. Se pide justo
++     * eso y se recarga las veces que haga falta. */
++    unsigned char crudo[MBEDTLS_ENTROPY_BLOCK_SIZE];
++    size_t k;
++
++    /* Un tope de recargas por si el generador se estropea y devuelve
++     * siempre bytes por encima del corte: mejor una credencial corta y
++     * un error en el log que un bucle infinito dentro de agent_create. */
++    if (++recargas > 32) {
++      LOGE("utils_random_string: 32 recargas sin completar %d caracteres", len);
++      break;
++    }
++
++    memset(crudo, 0, sizeof(crudo));
++    if (mbedtls_entropy_func(&ent, crudo, sizeof(crudo)) != 0) {
++      LOGE("utils_random_string: sin entropia; credenciales de ICE NO seguras");
++      break;
++    }
++
++    for (k = 0; k < sizeof(crudo) && i < len; k++) {
++      if (crudo[k] >= corte) {
++        continue;
++      }
++      s[i++] = alphanum[crudo[k] % base];
++    }
++  }
++
++  s[i] = '\0';
++  mbedtls_entropy_free(&ent);
++#else
+   srand(time(NULL));
+ 
+   for (i = 0; i < len; ++i) {
+@@ -21,6 +123,7 @@ void utils_random_string(char* s, const int len) {
+   }
+ 
+   s[len] = '\0';
++#endif
+ }
+ 
+ void utils_get_hmac_sha1(const char* input, size_t input_len, const char* key, size_t key_len, unsigned char* output) {

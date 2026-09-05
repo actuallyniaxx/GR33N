@@ -1,0 +1,358 @@
+diff --git a/usrsctplib/netinet/sctp_bsd_addr.c b/usrsctplib/netinet/sctp_bsd_addr.c
+index 3e0df08..528c871 100755
+--- a/usrsctplib/netinet/sctp_bsd_addr.c
++++ b/usrsctplib/netinet/sctp_bsd_addr.c
+@@ -172,10 +172,25 @@ sctp_iterator_thread(void *v SCTP_UNUSED)
+ void
+ sctp_startup_iterator(void)
+ {
++#if defined(GR33N_PS3)
++	/* GR33N_PS3: el pthread_t de PSL1GHT es un struct, no un escalar, asi
++	 * que no se puede preguntar por su verdad -- "used struct type value
++	 * where scalar is required". Y no vale compararlo con cero: un struct
++	 * no tiene un valor nulo definido.
++	 *
++	 * Se pregunta por la bandera que el propio usrsctp pone doce lineas mas
++	 * abajo cuando el hilo arranca bien. Dice exactamente lo mismo -- "ya
++	 * hay uno" -- y no depende de como este hecho el pthread_t. */
++	if (SCTP_BASE_VAR(iterator_thread_started)) {
++		/* You only get one */
++		return;
++	}
++#else
+ 	if (sctp_it_ctl.thread_proc) {
+ 		/* You only get one */
+ 		return;
+ 	}
++#endif
+ 	/* Initialize global locks here, thus only once. */
+ 	SCTP_ITERATOR_LOCK_INIT();
+ 	SCTP_IPI_ITERATOR_WQ_INIT();
+diff --git a/usrsctplib/netinet/sctp_callout.c b/usrsctplib/netinet/sctp_callout.c
+index ee6cd4c..c4327f4 100755
+--- a/usrsctplib/netinet/sctp_callout.c
++++ b/usrsctplib/netinet/sctp_callout.c
+@@ -199,6 +199,64 @@ user_sctp_timer_iterate(void *arg)
+ 	for (;;) {
+ #if defined(_WIN32)
+ 		Sleep(TIMEOUT_INTERVAL);
++#elif defined(GR33N_PS3)
++		/* GR33N_PS3: la newlib de PSL1GHT no trae nanosleep. Trae
++		 * usleep, y ese SI funciona de verdad en la consola: GR33N lo
++		 * usa desde ocho modulos, incluido el decodificador a 135 fps
++		 * con esperas de 200 us.
++		 *
++		 * NO ES UN CAMBIO COSMETICO. Este bucle es el latido que
++		 * dispara TODOS los temporizadores de SCTP -retransmision,
++		 * heartbeats, caducidad de la cookie-, o sea justo la
++		 * propiedad por la que se descarto el SCTP propio de libpeer.
++		 * Si esta espera no espera, el hilo se come un nucleo del PPU
++		 * entero; si espera de menos, los temporizadores van adelantados
++		 * y SCTP retransmite antes de tiempo.
++		 *
++		 * Por eso se mide el reloj en vez de fiarse de una sola
++		 * llamada: lo que el codigo de arriba consigue reintentando
++		 * nanosleep con el resto -dormir el intervalo COMPLETO pase lo
++		 * que pase-, aqui se consigue mirando cuanto ha pasado de
++		 * verdad. En lv2 no hay senales que interrumpan una espera,
++		 * asi que en la practica se sale a la primera vuelta; el bucle
++		 * esta por si esa suposicion deja de ser cierta, que es
++		 * exactamente la clase de suposicion que ya ha mordido a este
++		 * proyecto. */
++		{
++			struct timeval ini, ahora, pasado, tope;
++
++			tope.tv_sec = 0;
++			tope.tv_usec = TIMEOUT_INTERVAL * 1000;
++
++			gettimeofday(&ini, NULL);
++			for (;;) {
++				usleep(TIMEOUT_INTERVAL * 1000);
++
++				gettimeofday(&ahora, NULL);
++				timersub(&ahora, &ini, &pasado);
++
++				/* `tv_sec != 0` cubre dos casos de golpe, y
++				 * los dos tienen que salir del bucle:
++				 *
++				 *   positivo -> ha pasado un segundo o mas,
++				 *               o sea muchisimo mas de 10 ms;
++				 *   negativo -> el reloj ha saltado hacia
++				 *               atras. timersub normaliza a
++				 *               la manera de BSD, asi que un
++				 *               resultado negativo deja los
++				 *               segundos en negativo y los
++				 *               microsegundos positivos: por
++				 *               eso NO vale mirar tv_usec.
++				 *
++				 * Con el reloj atrasado se sale enseguida y el
++				 * tick va adelantado. Es mejor que la
++				 * alternativa, que es un hilo atascado aqui
++				 * hasta que el reloj recupere. */
++				if (pasado.tv_sec != 0 ||
++				    !timercmp(&pasado, &tope, <))
++					break;
++			}
++		}
+ #else
+ 		struct timespec amount, remaining;
+ 
+diff --git a/usrsctplib/netinet/sctp_os_userspace.h b/usrsctplib/netinet/sctp_os_userspace.h
+index 848ed32..5ec12bd 100755
+--- a/usrsctplib/netinet/sctp_os_userspace.h
++++ b/usrsctplib/netinet/sctp_os_userspace.h
+@@ -1013,7 +1013,9 @@ int sctp_userspace_get_mtu_from_ifn(uint32_t if_index);
+ 
+ #define AF_CONN 123
+ struct sockaddr_conn {
+-#ifdef HAVE_SCONN_LEN
++/* GR33N_PS3: en tono con usrsctp.h. Las dos definiciones de sockaddr_conn
++ * tienen que coincidir o la disposicion interna y la publica discrepan. */
++#if defined(HAVE_SCONN_LEN) || defined(GR33N_PS3)
+ 	uint8_t sconn_len;
+ 	uint8_t sconn_family;
+ #else
+@@ -1158,7 +1160,17 @@ in_broadcast(struct in_addr in)
+ 	        in.s_addr == htonl(INADDR_ANY));
+ }
+ 
+-#if defined(__APPLE__) || defined(__DragonFly__) || defined(__linux__) || defined(__native_client__) || defined(__NetBSD__) || defined(_WIN32) || defined(__Fuchsia__) || defined(__EMSCRIPTEN__)
++/* GR33N_PS3: la newlib de PSL1GHT no trae timingsafe_bcmp, asi que entramos
++ * en la lista de plataformas a las que usrsctp se la pone el mismo. La
++ * implementacion esta en sctp_userspace.c con el mismo guarda.
++ *
++ * IMPORTA QUE SEA LA SUYA Y NO UN memcmp. timingsafe_bcmp compara los N
++ * bytes SIEMPRE, acumulando las diferencias con un OR, y tarda lo mismo
++ * fallen el primer byte o el ultimo. memcmp corta en cuanto encuentra una
++ * diferencia, y esa diferencia de tiempo deja adivinar la firma de la
++ * cookie byte a byte. Aqui se usa justo para eso: sctp_input.c:2662 valida
++ * la firma HMAC de la cookie de INIT, y sctp_auth.c:1714 la de AUTH. */
++#if defined(__APPLE__) || defined(__DragonFly__) || defined(__linux__) || defined(__native_client__) || defined(__NetBSD__) || defined(_WIN32) || defined(__Fuchsia__) || defined(__EMSCRIPTEN__) || defined(GR33N_PS3)
+ int
+ timingsafe_bcmp(const void *, const void *, size_t);
+ #endif
+diff --git a/usrsctplib/netinet/sctp_pcb.c b/usrsctplib/netinet/sctp_pcb.c
+index e8ef38e..07224e5 100755
+--- a/usrsctplib/netinet/sctp_pcb.c
++++ b/usrsctplib/netinet/sctp_pcb.c
+@@ -6685,7 +6685,14 @@ sctp_pcb_finish(void)
+ 		sctp_it_ctl.thread_proc = NULL;
+ #else
+ 		pthread_join(sctp_it_ctl.thread_proc, NULL);
++#if defined(GR33N_PS3)
++		/* GR33N_PS3: mismo motivo que en sctp_bsd_addr.c -- aqui el
++		 * pthread_t es un struct y no se le puede asignar 0. Se pone a
++		 * ceros por bytes, que es lo que la linea de arriba pretende. */
++		memset(&sctp_it_ctl.thread_proc, 0, sizeof(sctp_it_ctl.thread_proc));
++#else
+ 		sctp_it_ctl.thread_proc = 0;
++#endif
+ #endif
+ 	}
+ #endif
+diff --git a/usrsctplib/netinet/sctp_userspace.c b/usrsctplib/netinet/sctp_userspace.c
+index 7188890..d73f969 100755
+--- a/usrsctplib/netinet/sctp_userspace.c
++++ b/usrsctplib/netinet/sctp_userspace.c
+@@ -94,7 +94,34 @@ sctp_userspace_set_threadname(const char *name)
+ #endif
+ }
+ 
+-#if !defined(_WIN32) && !defined(__native_client__)
++#if defined(GR33N_PS3)
++/* GR33N_PS3: la version de arriba abre un socket UDP y le pregunta el MTU a
++ * una interfaz con ioctl(SIOCGIFMTU). En la PS3 eso no se puede y ADEMAS no
++ * significa nada:
++ *
++ *   - PSL1GHT no tiene socket() ni ioctl() con esos nombres. Su API es
++ *     netSocket/netBind/netSetSockOpt, que es lo que usa GR33N desde el
++ *     primer dia. Dejar la version de arriba serian tres simbolos sin
++ *     resolver en el enlazado final del EBOOT.
++ *   - Con AF_CONN usrsctp no manda por IP. Los paquetes se los damos
++ *     nosotros y se los recogemos nosotros; quien los pone en el cable es
++ *     libpeer por DTLS sobre el socket UDP de GR33N. El MTU de una interfaz
++ *     local no describe ese camino.
++ *   - Y de todas formas era inalcanzable: el cuerpo entero cuelga de
++ *     if_indextoname(), que en ps3_stubs.c devuelve NULL siempre, que es la
++ *     verdad -- no hay interfaces que enumerar.
++ *
++ * 1280 es la MISMA respuesta que da usrsctp arriba cuando no sabe
++ * (if_index == 0xffffffff): el minimo de IPv6, conservador y seguro en
++ * cualquier camino. Si algun dia hay que afinarlo, el sitio es la
++ * negociacion de libpeer, que si sabe por donde va el DTLS. */
++int
++sctp_userspace_get_mtu_from_ifn(uint32_t if_index)
++{
++	(void)if_index;
++	return (1280);
++}
++#elif !defined(_WIN32) && !defined(__native_client__)
+ int
+ sctp_userspace_get_mtu_from_ifn(uint32_t if_index)
+ {
+@@ -137,7 +164,12 @@ sctp_userspace_get_mtu_from_ifn(uint32_t if_index)
+ }
+ #endif
+ 
+-#if defined(__APPLE__) || defined(__DragonFly__) || defined(__linux__) || defined(__native_client__) || defined(__NetBSD__) || defined(__QNX__) || defined(_WIN32) || defined(__Fuchsia__) || defined(__EMSCRIPTEN__)
++/* GR33N_PS3: ver el comentario del guarda gemelo en sctp_os_userspace.h.
++ * Los dos guardas TIENEN que llevar GR33N_PS3 a la vez: solo la declaracion
++ * seria un simbolo sin resolver en el enlazado, y solo la definicion, una
++ * llamada implicita que en C99 se supone que devuelve int -- que aqui
++ * acierta por casualidad, y esa es la peor forma de acertar. */
++#if defined(__APPLE__) || defined(__DragonFly__) || defined(__linux__) || defined(__native_client__) || defined(__NetBSD__) || defined(__QNX__) || defined(_WIN32) || defined(__Fuchsia__) || defined(__EMSCRIPTEN__) || defined(GR33N_PS3)
+ int
+ timingsafe_bcmp(const void *b1, const void *b2, size_t n)
+ {
+diff --git a/usrsctplib/user_environment.c b/usrsctplib/user_environment.c
+index ea52f0a..eb1b21a 100755
+--- a/usrsctplib/user_environment.c
++++ b/usrsctplib/user_environment.c
+@@ -345,6 +345,80 @@ read_random(void *buf, size_t size)
+ 	return;
+ }
+ 
++void
++finish_random(void)
++{
++	return;
++}
++#elif defined(GR33N_PS3)
++/* PS3 (PSL1GHT / lv2): sysGetRandomNumber es el generador del hipervisor,
++ * el mismo del que ya come mbedTLS en GR33N.
++ *
++ * DOS CAUTELAS, las mismas que en net_tls.c y por los mismos motivos:
++ *
++ *   1. Se pide en multiplos de 8. La syscall lo espera asi, y pedirle 5
++ *      bytes puede devolver error o escribir de mas.
++ *   2. No se confia solo en el codigo de retorno. Si la syscall fuera un
++ *      hueco que no hace nada, ese codigo podria salir bien igualmente, y
++ *      una fuente de entropia rota no da error: da claves predecibles.
++ *      Aqui no se puede devolver fallo -la firma no lo permite-, asi que
++ *      al menos se deja constancia por la salida estandar, que GR33N
++ *      reenvia al servidor de depuracion.
++ */
++/* De donde sale la declaracion de sysGetRandomNumber NO SE ADIVINA AQUI.
++ *
++ * La primera version de esto puso <lv2/random.h> porque sonaba bien. No
++ * existe, y los 23 ficheros se enteraron a la vez. La cabecera buena la
++ * averigua build-usrsctp.sh probando a compilar una llamada con cada
++ * candidata -- <lv2/system.h>, <sys/random_number.h>, <ppu-lv2.h>... -- y
++ * escribe la ganadora en gr33n_ps3_random.h. Si ninguna cuela, deja ahi el
++ * prototipo a mano y lo dice por pantalla.
++ *
++ * Es el mismo remedio que con BYTE_ORDER y con struct iovec: preguntarle al
++ * compilador en vez de acordarse. */
++#include <stdio.h>
++#include <string.h>
++#include "gr33n_ps3_random.h"
++
++void
++init_random(void)
++{
++	return;
++}
++
++void
++read_random(void *buf, size_t size)
++{
++	unsigned char tmp[64];
++	unsigned char *out = (unsigned char *)buf;
++	size_t done = 0;
++
++	while (done < size) {
++		size_t chunk = size - done;
++		size_t ask, i;
++		int todo_ceros = 1;
++
++		if (chunk > sizeof(tmp))
++			chunk = sizeof(tmp);
++
++		ask = (chunk + 7u) & ~(size_t)7u;
++
++		memset(tmp, 0, sizeof(tmp));
++		sysGetRandomNumber(tmp, (uint64_t)ask);
++
++		for (i = 0; i < ask; i++)
++			if (tmp[i]) { todo_ceros = 0; break; }
++
++		if (todo_ceros) {
++			printf("[usrsctp] !! sysGetRandomNumber devolvio solo ceros: "
++			       "SCTP con entropia predecible\n");
++		}
++
++		memcpy(out + done, tmp, chunk);
++		done += chunk;
++	}
++}
++
+ void
+ finish_random(void)
+ {
+diff --git a/usrsctplib/user_socket.c b/usrsctplib/user_socket.c
+index 163db34..c329402 100755
+--- a/usrsctplib/user_socket.c
++++ b/usrsctplib/user_socket.c
+@@ -2943,6 +2943,28 @@ sctp_userspace_ip_output(int *result, struct mbuf *o_pak,
+ 	msg_hdr.msg_controllen = 0;
+ 	msg_hdr.msg_flags = 0;
+ 
++#if defined(GR33N_PS3)
++	/* GR33N_PS3: esto es la salida por IP, y en la PS3 no existe.
++	 *
++	 * Los dos descriptores de ahi abajo -userspace_rawsctp y
++	 * userspace_udpsctp- los abre recv_thread_init(), que en esta
++	 * compilacion es la version vacia de ps3_stubs.c. O sea que valen -1
++	 * siempre y estos dos `if` no se cumplen jamas. Aun asi el sendmsg se
++	 * compilaba, y PSL1GHT no tiene sendmsg: era un simbolo sin resolver
++	 * en el enlazado final del EBOOT por codigo que no se ejecuta.
++	 *
++	 * Se cambia por un aviso ruidoso en vez de por nada. Si esto llegara a
++	 * salir por el log de GR33N, significa que usrsctp ha decidido mandar
++	 * por IP en lugar de por AF_CONN, y eso es un fallo de configuracion
++	 * que hay que ver el dia que pase y no tres semanas despues.
++	 *
++	 * (La version de IPv6, en sctp_userspace_ip6_output, no se toca porque
++	 * con -DINET a secas no se compila. Si alguien enciende INET6 se
++	 * encontrara el mismo simbolo sin resolver, y este comentario.) */
++	SCTP_PRINTF("[GR33N] sctp_userspace_ip_output: salida por IP en una "
++	            "consola que solo habla AF_CONN. Esto no deberia pasar.\n");
++	*result = EINVAL;
++#else
+ 	if ((!use_udp_tunneling) && (SCTP_BASE_VAR(userspace_rawsctp) != -1)) {
+ 		if (sendmsg(SCTP_BASE_VAR(userspace_rawsctp), &msg_hdr, MSG_DONTWAIT) < 0) {
+ 			*result = errno;
+@@ -2953,6 +2975,7 @@ sctp_userspace_ip_output(int *result, struct mbuf *o_pak,
+ 			*result = errno;
+ 		}
+ 	}
++#endif
+ #else
+ 	win_msg_hdr.name = (struct sockaddr *) &dst;
+ 	win_msg_hdr.namelen = sizeof(struct sockaddr_in);
+diff --git a/usrsctplib/usrsctp.h b/usrsctplib/usrsctp.h
+index 93e89b3..dfa4a95 100644
+--- a/usrsctplib/usrsctp.h
++++ b/usrsctplib/usrsctp.h
+@@ -119,8 +119,20 @@ struct sctp_common_header {
+ /* The definition of struct sockaddr_conn MUST be in
+  * tune with other sockaddr_* structures.
+  */
++/* GR33N_PS3: la newlib de PSL1GHT viene de BSD -- su struct sockaddr lleva
++ * un byte sa_len delante, con la familia en el desplazamiento 1, y usrsctp
++ * se compila con HAVE_SA_LEN. sockaddr_conn TIENE que usar la misma
++ * disposicion; si no, su sconn_family (un uint16 pelado en el
++ * desplazamiento 0) lo lee mal el codigo generico de direcciones de
++ * usrsctp y corrompe el monton al crear el socket, al bind o al connect.
++ *
++ * Se sabe que PSL1GHT es de esa familia porque link.c de GR33N rellena
++ * sin_len desde hace semanas y compila. El diagnostico y el arreglo son de
++ * green-nx, que se lo comio en Switch (devkitA64, misma familia de newlib).
++ * Un fallo asi en una PS3, sin depurador, son varias tardes. */
+ #if defined(__APPLE__) || defined(__Bitrig__) || defined(__DragonFly__) || \
+-    defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
++    defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
++    defined(GR33N_PS3)
+ struct sockaddr_conn {
+ 	uint8_t sconn_len;
+ 	uint8_t sconn_family;

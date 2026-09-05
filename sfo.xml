@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GR33N - plantilla del PARAM.SFO.
+
+  La usan las dos rutas: 'make pkg' (via SFOXML en el Makefile) y
+  deps/install-xmb.sh. Un solo fichero para que no puedan divergir.
+
+  TITLE y TITLE_ID los pisa la herramienta con --title y --appid desde el
+  Makefile, asi que ahi lo que ponga da igual: manda el Makefile.
+
+  CATEGORY es EL campo. Decide en que columna del XMB aparece la entrada,
+  y un valor que el firmware no conozca hace que no aparezca en ninguna:
+
+      DG  juego de disco          -> Juego
+      HG  juego en disco duro     -> Juego
+      GD  datos de juego          -> Juego
+      AP  aplicacion de fotos     -> Foto
+      AM  aplicacion de musica    -> Musica
+      AV  aplicacion de video     -> Video
+      WT  Web TV                  -> TV
+      CB  red                     -> Red / PlayStation Network
+      HM  PlayStation Network     -> Red
+      SF  frontal de la tienda    -> Red
+
+  GR33N es un cliente de streaming: no es un juego, es una aplicacion de
+  red. Va en CB.
+
+  ATTRIBUTE es un mapa de bits y NO es lo que yo creia. El bit 1 (valor 2)
+  es "PSP Export", que aqui no pinta nada. Los que importan de verdad:
+
+      8   fuerza el XMB en juego habilitado
+      16  deshabilita el XMB en juego
+
+  Cero es lo correcto para una aplicacion normal: se queda el
+  comportamiento por defecto del firmware.
+
+  RESOLUTION es un mapa de bits, y venia con los seis puestos (63) porque
+  es lo que trae la plantilla de PSL1GHT. El orden de los bits lo confirma
+  la propia lista que enseña RPCS3 al leer el fichero:
+
+      1   480          8   1080
+      2   576         16   480 16:9
+      4   720         32   576 16:9
+
+  Lo que GR33N soporta de verdad esta en res_pref[] de video.c: 720, 576 y
+  480, en ese orden de preferencia, con el aspecto en AUTO (asi que las dos
+  variantes 16:9 entran solas). 1080 NO esta en esa lista y no se declara.
+
+      1 + 2 + 4 + 16 + 32 = 55
+
+  Cuando video.c sepa sacar 1080 se suma el 8 y no antes. Declarar una
+  resolucion que no se pinta es la misma clase de mentira que veniamos
+  arrastrando en el resto del proyecto, solo que esta la ve el usuario en
+  la ficha del juego.
+
+  SOUND_FORMAT venia en 279, que es una mezcla de LPCM y sonido envolvente
+  copiada de la plantilla. GR33N saca LPCM estereo y nada mas: Opus llega
+  a 48 kHz en dos canales y va al puerto de audio tal cual. El bit 0 es
+  exactamente eso, asi que 1 es lo que hay.
+
+  (Aqui ponia "GR33N todavia no emite ni un byte de audio", y era verdad
+  cuando se escribio. Un comentario que sobrevive al codigo que describe
+  es el mismo fallo que una lista paralela sin actualizar.)
+-->
+<sfo>
+  <!-- El formato es NN.NN y no da para el numero de parche, asi que se
+       ponen mayor y menor: 0.27.x -> 00.27. Si esto se queda atras
+       respecto a GR33N_VERSION, 'make pkg' avisa. -->
+  <value name="APP_VER" type="string" size="8">01.00</value>
+  <value name="ATTRIBUTE" type="integer">0</value>
+  <value name="BOOTABLE" type="integer">1</value>
+  <value name="CATEGORY" type="string" size="4">CB</value>
+  <value name="LICENSE" type="string" size="512">GR33N - homebrew libre. Sin garantia de ningun tipo.</value>
+  <value name="PARENTAL_LEVEL" type="integer">0</value>
+  <value name="PS3_SYSTEM_VER" type="string" size="8">03.5500</value>
+  <value name="RESOLUTION" type="integer">55</value>
+  <value name="SOUND_FORMAT" type="integer">1</value>
+  <value name="TITLE" type="string" size="128">GR33N</value>
+  <value name="TITLE_ID" type="string" size="16">GR33N0PS3</value>
+  <value name="VERSION" type="string" size="8">01.00</value>
+</sfo>

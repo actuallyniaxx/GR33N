@@ -20,9 +20,12 @@ You need a homebrew-enabled PlayStation 3 and an Xbox account with a subscriptio
 3. Install it from the XMB.
 4. Launch GR33N and follow the device-code sign-in procedure that will appear on the screen.
 
-> [!NOTE]
+> [!IMPORTANT]
 > This procedure will only appear automatically if you don't have a session token on your system.
 > If you already had a token and it expired or was manually revoked you can re-login again from the settings tab.
+
+> [!NOTE]
+> GR33N shows up in the Network column of the XMB, not among the games — it's a network application
 
 ## Credits
 

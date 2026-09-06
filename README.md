@@ -118,6 +118,12 @@ GR33N wouldn't exist without two projects that came first:
 
 [green-vita](https://github.com/Day-OS/green-vita), by Day-OS — the PS Vita one, which is where the idea that this would fit on an old Sony console came from.
 
+And I also would like to mention:
+
+[PS3-Moonlight](https://github.com/Cruslan/PS3-Moonlight), by Cruslan — a valuable technical reference for PS3-specific implementation details and techniques used while developing GR33N.
+
+[Cell Stream](https://github.com/mohasi/ps3-dev/releases), by mohasi — another valuable technical reference for PS3 streaming and console-specific implementation details used while developing GR33N.
+
 Full third-party licences
 ([libpeer](https://github.com/sepfy/libpeer),
 [usrsctp](https://github.com/sctplab/usrsctp),

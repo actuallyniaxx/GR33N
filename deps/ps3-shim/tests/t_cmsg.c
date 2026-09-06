@@ -1,14 +1,14 @@
-/* GR33N - prueba de las macros que ps3-shim anade cuando la consola no las
- * trae: la familia CMSG_* y timercmp/timeradd/timersub.
+/* GR33N - tests the macros ps3-shim adds when the console doesn't bring
+ * them: the CMSG_* family and timercmp/timeradd/timersub.
  *
- * Se compila contra una consola FALSA (/tmp/consola) que tiene struct
- * cmsghdr, struct msghdr y struct timeval pero NINGUNA de las macros. Es la
- * situacion que creemos que hay en la PS3, y la que la glibc del PC tapa
- * porque ahi si estan.
+ * It compiles against a FAKE console (tests/console) that has struct
+ * cmsghdr, struct msghdr and struct timeval but NONE of the macros. That's
+ * the situation we believe exists on the PS3, and the one the PC's glibc
+ * hides, because there they really are present.
  *
- * Corre en el PC, nativo. No prueba la PS3: prueba que la aritmetica de las
- * macros es la de BSD y que recorrer una lista de mensajes auxiliares con
- * ellas no se sale del buffer.
+ * Runs on the PC, natively. It does not test the PS3: it tests that the
+ * macros' arithmetic is BSD's, and that walking a list of ancillary
+ * messages with them doesn't run off the end of the buffer.
  */
 
 #include <stdio.h>
@@ -22,9 +22,9 @@ static int fallos;
 
 #define OK(cond, ...) do { \
 	if (cond) { \
-		printf("   bien  "); \
+		printf("   ok    "); \
 	} else { \
-		printf("   MAL   "); \
+		printf("   FAIL  "); \
 		fallos++; \
 	} \
 	printf(__VA_ARGS__); \
@@ -40,55 +40,56 @@ int main(void)
 	int cuantos;
 	unsigned int datos_a, datos_b;
 
-	printf("== quien pone las macros ==\n");
+	printf("== who provides the macros ==\n");
 #ifdef GR33N_CMSG_PUESTAS_AQUI
-	printf("   CMSG_*: ps3-shim (que es lo que se quiere probar)\n");
+	printf("   CMSG_*: ps3-shim (which is what we want to test)\n");
 #else
-	printf("   CMSG_*: la consola falsa -- la prueba NO vale\n");
+	printf("   CMSG_*: the fake console -- this test is WORTHLESS\n");
 	return 1;
 #endif
 #ifdef GR33N_TIMERCMP_PUESTA_AQUI
 	printf("   timer*: ps3-shim\n");
 #else
-	printf("   timer*: la consola falsa -- la prueba NO vale\n");
+	printf("   timer*: the fake console -- this test is WORTHLESS\n");
 	return 1;
 #endif
 
-	printf("\n== aritmetica ==\n");
+	printf("\n== arithmetic ==\n");
 
-	/* La alineacion es la de BSD: al tamaño de long. */
+	/* The alignment is BSD's: to the size of a long. */
 	OK(CMSG_ALIGN(0) == 0, "CMSG_ALIGN(0) = %u", (unsigned)CMSG_ALIGN(0));
-	OK(CMSG_ALIGN(1) == sizeof(long), "CMSG_ALIGN(1) = %u (long mide %u)",
+	OK(CMSG_ALIGN(1) == sizeof(long), "CMSG_ALIGN(1) = %u (long is %u)",
 	   (unsigned)CMSG_ALIGN(1), (unsigned)sizeof(long));
 	OK(CMSG_ALIGN(sizeof(long)) == sizeof(long),
-	   "CMSG_ALIGN(sizeof long) no crece");
+	   "CMSG_ALIGN(sizeof long) doesn't grow");
 
-	/* LEN no alinea el dato; SPACE si. Esa es toda la diferencia entre
-	 * las dos, y confundirlas es el error clasico: reservar con LEN deja
-	 * el siguiente cabecero sin sitio para su relleno. */
+	/* LEN doesn't align the data; SPACE does. That is the whole
+	 * difference between the two, and mixing them up is the classic
+	 * mistake: allocating with LEN leaves the next header with no room
+	 * for its padding. */
 	OK(CMSG_LEN(4) == cab + 4, "CMSG_LEN(4) = %u", (unsigned)CMSG_LEN(4));
 	OK(CMSG_SPACE(4) == cab + CMSG_ALIGN(4), "CMSG_SPACE(4) = %u",
 	   (unsigned)CMSG_SPACE(4));
-	OK(CMSG_SPACE(4) >= CMSG_LEN(4), "SPACE nunca es menor que LEN");
+	OK(CMSG_SPACE(4) >= CMSG_LEN(4), "SPACE is never smaller than LEN");
 
-	/* CMSG_DATA cae justo detras del cabecero alineado. */
+	/* CMSG_DATA lands right behind the aligned header. */
 	memset(buf, 0, sizeof(buf));
 	c = (struct cmsghdr *)buf;
 	OK((unsigned char *)CMSG_DATA(c) == buf + cab,
-	   "CMSG_DATA apunta %u bytes despues del cabecero",
+	   "CMSG_DATA points %u bytes past the header",
 	   (unsigned)((unsigned char *)CMSG_DATA(c) - buf));
 
-	printf("\n== recorrer una lista de dos ==\n");
+	printf("\n== walking a list of two ==\n");
 
-	/* Se montan dos mensajes auxiliares como los monta sctp_indata.c y
-	 * se recorren como los recorre sctp_output.c. */
+	/* Two ancillary messages are built the way sctp_indata.c builds them,
+	 * and walked the way sctp_output.c walks them. */
 	memset(buf, 0xAA, sizeof(buf));
 	memset(&msg, 0, sizeof(msg));
 	msg.msg_control = buf;
 	msg.msg_controllen = (socklen_t)(CMSG_SPACE(4) + CMSG_SPACE(12));
 
 	c = CMSG_FIRSTHDR(&msg);
-	OK(c == (struct cmsghdr *)buf, "el primero es el principio del buffer");
+	OK(c == (struct cmsghdr *)buf, "the first one is the start of the buffer");
 	c->cmsg_len = (socklen_t)CMSG_LEN(4);
 	c->cmsg_level = 132;   /* IPPROTO_SCTP */
 	c->cmsg_type = 1;
@@ -106,28 +107,29 @@ int main(void)
 	for (c = CMSG_FIRSTHDR(&msg); c != NULL; c = CMSG_NXTHDR(&msg, c)) {
 		unsigned char *fin = (unsigned char *)c + c->cmsg_len;
 		OK(fin <= buf + msg.msg_controllen,
-		   "el mensaje %d cabe entero en el buffer", cuantos);
+		   "message %d fits entirely inside the buffer", cuantos);
 		cuantos++;
 		if (cuantos > 8) {
-			printf("   MAL   CMSG_NXTHDR no termina nunca\n");
+			printf("   FAIL  CMSG_NXTHDR never terminates\n");
 			fallos++;
 			break;
 		}
 	}
-	OK(cuantos == 2, "salen %d mensajes (se pusieron 2)", cuantos);
+	OK(cuantos == 2, "%d messages come out (2 went in)", cuantos);
 
-	/* Y que NO se pase del final: con el buffer justo, el segundo
-	 * NXTHDR tiene que devolver NULL y no una direccion de mas alla. */
+	/* And that it does NOT run past the end: with the buffer exactly
+	 * sized, the second NXTHDR has to return NULL and not an address
+	 * beyond it. */
 	msg.msg_controllen = (socklen_t)CMSG_SPACE(4);
 	c = CMSG_FIRSTHDR(&msg);
 	c->cmsg_len = (socklen_t)CMSG_LEN(4);
 	OK(CMSG_NXTHDR(&msg, c) == NULL,
-	   "con sitio para uno solo, no se inventa un segundo");
+	   "with room for one only, it doesn't invent a second");
 
-	/* Y con el buffer mas corto que un cabecero, ni el primero. */
+	/* And with the buffer shorter than a header, not even the first. */
 	msg.msg_controllen = (socklen_t)(sizeof(struct cmsghdr) - 1);
 	OK(CMSG_FIRSTHDR(&msg) == NULL,
-	   "sin sitio ni para el cabecero, FIRSTHDR da NULL");
+	   "with no room even for the header, FIRSTHDR gives NULL");
 
 	printf("\n== timercmp / timeradd / timersub ==\n");
 	{
@@ -136,12 +138,12 @@ int main(void)
 		a.tv_sec = 10; a.tv_usec = 500000;
 		b.tv_sec = 10; b.tv_usec = 500001;
 		OK(timercmp(&a, &b, <), "10.500000 < 10.500001");
-		OK(!timercmp(&a, &b, >), "y no es mayor");
+		OK(!timercmp(&a, &b, >), "and it isn't greater");
 		b.tv_sec = 9;
-		OK(timercmp(&a, &b, >), "10.5 > 9.500001 (manda el segundero)");
+		OK(timercmp(&a, &b, >), "10.5 > 9.500001 (the seconds win)");
 
-		/* El acarreo, que es donde se equivoca uno al escribirlas de
-		 * memoria. */
+		/* The carry, which is where you get it wrong writing these
+		 * from memory. */
 		a.tv_sec = 1; a.tv_usec = 800000;
 		b.tv_sec = 2; b.tv_usec = 300000;
 		timeradd(&a, &b, &r);
@@ -154,29 +156,30 @@ int main(void)
 		OK(r.tv_sec == 1 && r.tv_usec == 800000,
 		   "4.1 - 2.3 = %ld.%06ld", r.tv_sec, r.tv_usec);
 
-		/* Y el caso del que depende sctp_timer.c:534, que justo
-		 * despues del timersub comprueba `tv_sec < 0 || tv_usec < 0`:
-		 * un resultado negativo tiene que quedar con los segundos en
-		 * negativo y los microsegundos normalizados. */
+		/* And the case sctp_timer.c:534 depends on, which right after
+		 * the timersub checks `tv_sec < 0 || tv_usec < 0`: a negative
+		 * result has to come out with the seconds negative and the
+		 * microseconds normalised. */
 		a.tv_sec = 1; a.tv_usec = 0;
 		b.tv_sec = 3; b.tv_usec = 500000;
 		timersub(&a, &b, &r);
-		OK(r.tv_sec < 0, "1.0 - 3.5 deja los segundos negativos (%ld.%06ld)",
+		OK(r.tv_sec < 0, "1.0 - 3.5 leaves the seconds negative (%ld.%06ld)",
 		   r.tv_sec, r.tv_usec);
 		OK(r.tv_usec >= 0 && r.tv_usec < 1000000,
-		   "y los microsegundos normalizados");
+		   "and the microseconds normalised");
 	}
 
-	printf("\n== las constantes sueltas ==\n");
+	printf("\n== the loose constants ==\n");
 	OK(SOCK_SEQPACKET != SOCK_STREAM && SOCK_SEQPACKET != SOCK_DGRAM,
-	   "SOCK_SEQPACKET (%d) no choca con STREAM (%d) ni DGRAM (%d)",
+	   "SOCK_SEQPACKET (%d) doesn't clash with STREAM (%d) or DGRAM (%d)",
 	   SOCK_SEQPACKET, SOCK_STREAM, SOCK_DGRAM);
 	OK(IPPORT_RESERVED > 0, "IPPORT_RESERVED = %d", IPPORT_RESERVED);
-	OK(ERESTART < 0, "ERESTART = %d (negativo, no choca con ningun errno)",
+	OK(ERESTART < 0, "ERESTART = %d (negative, clashes with no errno)",
 	   ERESTART);
 	OK(ERESTART != EINTR && ERESTART != EWOULDBLOCK,
-	   "y es distinto de EINTR y EWOULDBLOCK, que se comparan al lado");
+	   "and differs from EINTR and EWOULDBLOCK, which sit next to it");
 
-	printf("\n%s (%d fallos)\n", fallos ? "HAY FALLOS" : "todo bien", fallos);
+	printf("\n%s (%d failures)\n", fallos ? "THERE ARE FAILURES" : "all good",
+	       fallos);
 	return fallos != 0;
 }

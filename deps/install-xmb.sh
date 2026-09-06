@@ -1,26 +1,26 @@
 #!/bin/sh
 #
-# GR33N - prepara la carpeta que el XMB puede lanzar.
+# GR33N - prepares the folder that the XMB can launch.
 #
-#   sh deps/install-xmb.sh            (desde la raiz del proyecto)
+#   sh deps/install-xmb.sh            (from the project root)
 #
-# Deja en xmb/ el arbol listo para copiar a la consola:
+# Leaves in xmb/ the tree ready to copy to the console:
 #
 #   xmb/GR33N0PS3/PARAM.SFO
 #   xmb/GR33N0PS3/ICON0.PNG
 #   xmb/GR33N0PS3/USRDIR/EBOOT.BIN
 #
-# Copia esa carpeta GR33N0PS3 entera a /dev_hdd0/game/ y GR33N sale en el
-# XMB como un juego mas. A partir de ahi, actualizar es sustituir un solo
-# fichero: USRDIR/EBOOT.BIN.
+# Copy that whole GR33N0PS3 folder to /dev_hdd0/game/ and GR33N shows up
+# in the XMB as just another game. From then on, updating means swapping
+# out a single file: USRDIR/EBOOT.BIN.
 #
-# EL NOMBRE DEL EJECUTABLE IMPORTA. El XMB busca USRDIR/EBOOT.BIN y solo
-# eso. Un gr33n.self perfectamente valido al lado no lo mira nadie: la
-# entrada aparece en el menu y no arranca.
+# THE NAME OF THE EXECUTABLE MATTERS. The XMB looks for USRDIR/EBOOT.BIN
+# and only that. A perfectly valid gr33n.self sitting right next to it
+# goes unnoticed: the entry shows up in the menu and never launches.
 #
-# Y el TITLE_ID del PARAM.SFO tiene que coincidir con el nombre de la
-# carpeta. Si no, el XMB se lia con las partidas guardadas y a veces ni
-# muestra la entrada.
+# And the TITLE_ID in PARAM.SFO has to match the folder name. If it
+# doesn't, the XMB gets confused with the saved games and sometimes
+# doesn't even show the entry.
 
 set -e
 
@@ -33,10 +33,10 @@ APPID=$(grep -E "^APPID" "$HERE/Makefile" | head -1 | sed 's/.*[[:space:]]//')
 TITLE=$(grep -E "^TITLE" "$HERE/Makefile" | head -1 | sed 's/.*[[:space:]]//')
 VER=$(grep GR33N_VERSION "$HERE/include/gr33n.h" | sed 's/.*"\(.*\)".*/\1/')
 
-[ -n "$APPID" ] || { echo "no encuentro APPID en el Makefile"; exit 1; }
+[ -n "$APPID" ] || { echo "can't find APPID in the Makefile"; exit 1; }
 
 SELF="$HERE/gr33n.self"
-[ -f "$SELF" ] || { echo "no hay gr33n.self. Ejecuta make primero."; exit 1; }
+[ -f "$SELF" ] || { echo "no gr33n.self. Run make first."; exit 1; }
 
 echo ">> $TITLE $VER  ($APPID)"
 
@@ -45,17 +45,18 @@ mkdir -p "$OUT/$APPID/USRDIR"
 
 # --- PARAM.SFO -------------------------------------------------------
 #
-# La plantilla es sfo.xml de la RAIZ, LA MISMA que usa 'make pkg' via
-# SFOXML. Tener dos copias de esto es como acaban las entradas del XMB
-# apareciendo en una columna distinta segun como las hayas instalado.
+# The template is sfo.xml at the ROOT, the SAME one 'make pkg' uses via
+# SFOXML. Keeping two copies of this is how XMB entries end up showing
+# up in a different column depending on how you installed them.
 #
-# Estuvo en pkgfiles/ y se movio arriba, porque la regla de PSL1GHT copia
-# pkgfiles/ entero DENTRO del paquete y el sfo.xml acababa instalado en la
-# consola. Este script se quedo apuntando al sitio viejo y por tanto
-# roto: no se noto porque desde entonces solo se ha usado 'make pkg'.
+# It used to be in pkgfiles/ and got moved up top, because the PSL1GHT
+# rule copies the whole of pkgfiles/ INTO the package and sfo.xml ended
+# up installed on the console too. This script was left pointing at the
+# old spot and so broken: nobody noticed because only 'make pkg' has
+# been used since.
 
 XML="$HERE/sfo.xml"
-[ -f "$XML" ] || { echo "falta sfo.xml en la raiz del proyecto"; exit 1; }
+[ -f "$XML" ] || { echo "missing sfo.xml at the project root"; exit 1; }
 
 if [ -x "$PS3DEV/bin/sfo" ]; then
 	"$PS3DEV/bin/sfo" --fromxml "$XML" "$OUT/$APPID/PARAM.SFO" \
@@ -64,40 +65,41 @@ fi
 
 if [ ! -f "$OUT/$APPID/PARAM.SFO" ]; then
 	echo
-	echo "!! no se pudo generar PARAM.SFO desde $XML"
-	echo "   Para ver el formato que espera esta version de sfo:"
-	echo "     $PS3DEV/bin/sfo --toxml /ruta/a/PARAM.SFO /tmp/ejemplo.xml"
+	echo "!! could not generate PARAM.SFO from $XML"
+	echo "   To see the format this version of sfo expects:"
+	echo "     $PS3DEV/bin/sfo --toxml /path/to/PARAM.SFO /tmp/example.xml"
 	exit 1
 fi
 
-echo ">> PARAM.SFO desde pkgfiles/sfo.xml"
+echo ">> PARAM.SFO from pkgfiles/sfo.xml"
 
-# --- recursos del XMB ------------------------------------------------
+# --- XMB assets ------------------------------------------------------
 #
-# Lo que este en pkgfiles/ con el nombre correcto se copia. Lo que no
-# este, no se usa y no pasa nada. Tamanos y detalles en
+# Whatever is in pkgfiles/ under the right name gets copied. Whatever
+# isn't, isn't used, and that's fine. Sizes and details are in
 # pkgfiles/README.txt.
 #
-# Y se COMPRUEBA cada PNG antes de copiarlo, porque el XMB los rechaza en
-# silencio por dos motivos que no se ven mirando la imagen:
+# And every PNG gets CHECKED before it's copied, because the XMB
+# rejects them silently for two reasons you can't see just by looking
+# at the image:
 #
-#   1. Tamano equivocado. No escala: o mide lo que tiene que medir o no
-#      se dibuja.
-#   2. PNG ENTRELAZADO (Adam7). Muchos editores lo activan por defecto o
-#      lo dejan puesto al "guardar para web", y el decodificador del XMB
-#      no lo admite. La imagen se ve perfecta en el PC y no aparece en la
-#      consola.
+#   1. Wrong size. It doesn't scale: either it's exactly the size it
+#      has to be, or it doesn't get drawn.
+#   2. INTERLACED PNG (Adam7). Plenty of editors turn this on by
+#      default, or leave it on when you "save for web", and the XMB's
+#      decoder doesn't support it. The image looks perfect on the PC
+#      and doesn't show up on the console.
 #
-# Los dos datos estan en la cabecera IHDR, en posiciones fijas: ancho en
-# el byte 16, alto en el 20, y el modo de entrelazado en el 28.
+# Both figures live in the IHDR header, at fixed positions: width at
+# byte 16, height at byte 20, and the interlace mode at byte 28.
 
 png_info() {
-	# $1 fichero -> "ancho alto entrelazado"
+	# $1 file -> "width height interlace"
 	#
-	# Se leen los 13 bytes del IHDR y se componen a mano. El PNG guarda
-	# los enteros en big-endian y od los interpretaria segun la maquina,
-	# asi que byte a byte es lo unico que da el mismo resultado aqui y en
-	# cualquier sitio.
+	# The 13 bytes of the IHDR are read and assembled by hand. PNG stores
+	# its integers big-endian, and od would interpret them according to
+	# the machine it runs on, so doing it byte by byte is the only thing
+	# that gives the same result here as anywhere else.
 	od -An -tu1 -j16 -N13 "$1" 2>/dev/null | tr -s ' ' '\n' | grep -v '^$' | awk '
 		{ v[NR] = $1 }
 		END {
@@ -109,24 +111,24 @@ png_info() {
 }
 
 check_png() {
-	# $1 fichero  $2 ancho esperado  $3 alto esperado
+	# $1 file  $2 expected width  $3 expected height
 	set -- "$1" "$2" "$3" $(png_info "$1")
 	w=$4; h=$5; il=$6
 
-	[ -n "$w" ] || { echo "   (no parece un PNG)"; return 1; }
+	[ -n "$w" ] || { echo "   (doesn't look like a PNG)"; return 1; }
 
 	ok=0
 	if [ "$w" != "$2" ] || [ "$h" != "$3" ]; then
-		echo "   !! mide ${w}x${h}, tiene que medir ${2}x${3}"
+		echo "   !! it's ${w}x${h}, it has to be ${2}x${3}"
 		ok=1
 	fi
 	if [ "$il" != "0" ]; then
-		echo "   !! esta ENTRELAZADO. El XMB no lo va a dibujar."
-		echo "      Arreglo:  magick \"$1\" -interlace none \"$1\""
+		echo "   !! it's INTERLACED. The XMB won't draw it."
+		echo "      Fix:  magick \"$1\" -interlace none \"$1\""
 		ok=1
 	fi
 
-	[ "$ok" -eq 0 ] && echo "   ${w}x${h}, sin entrelazar"
+	[ "$ok" -eq 0 ] && echo "   ${w}x${h}, not interlaced"
 	return $ok
 }
 
@@ -145,35 +147,35 @@ for f in ICON0.PNG PIC0.PNG PIC1.PNG SND0.AT3 ICON1.PAM; do
 	cp "$src" "$OUT/$APPID/$f"
 done
 
-# Sin icono propio, el generico de PSL1GHT. Feo, pero sin ICON0.PNG hay
-# firmwares que directamente no dibujan la entrada.
+# With no icon of its own, the PSL1GHT generic one. Ugly, but without
+# ICON0.PNG some firmwares just won't draw the entry at all.
 if [ ! -f "$OUT/$APPID/ICON0.PNG" ]; then
 	for g in "$PS3DEV/bin/ICON0.PNG" \
 	         "$PS3DEV/ppu/ICON0.PNG" \
 	         "$PS3DEV/psl1ght/ICON0.PNG"; do
 		if [ -f "$g" ]; then
 			cp "$g" "$OUT/$APPID/ICON0.PNG"
-			echo ">> ICON0.PNG generico ($g)"
+			echo ">> generic ICON0.PNG ($g)"
 			break
 		fi
 	done
 fi
 
 if [ ! -f "$OUT/$APPID/ICON0.PNG" ]; then
-	echo ">> SIN ICONO. Deja uno de 320x176 en pkgfiles/ICON0.PNG"
+	echo ">> NO ICON. Drop a 320x176 one in pkgfiles/ICON0.PNG"
 fi
 
-# --- el ejecutable, con el NOMBRE que busca el XMB -------------------
+# --- the executable, with the NAME the XMB looks for -----------------
 
 cp "$SELF" "$OUT/$APPID/USRDIR/EBOOT.BIN"
 
 echo
-echo ">> listo en $OUT/$APPID"
+echo ">> ready in $OUT/$APPID"
 find "$OUT/$APPID" -type f | sed "s|$OUT/|   |"
 echo
-echo "   Copia la carpeta $APPID a /dev_hdd0/game/ de la consola."
-echo "   Para actualizar despues: solo USRDIR/EBOOT.BIN."
+echo "   Copy the $APPID folder to /dev_hdd0/game/ on the console."
+echo "   To update afterwards: just USRDIR/EBOOT.BIN."
 echo
-echo "   PIC1.PNG y PIC0.PNG van en la RAIZ de la carpeta, junto al"
-echo "   PARAM.SFO - no dentro de USRDIR. Y el XMB cachea: si cambias"
-echo "   una imagen y sigues viendo la vieja, reinicia la consola."
+echo "   PIC1.PNG and PIC0.PNG live at the ROOT of the folder, next to"
+echo "   PARAM.SFO - not inside USRDIR. And the XMB caches: if you change"
+echo "   an image and keep seeing the old one, restart the console."

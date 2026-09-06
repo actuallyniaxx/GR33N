@@ -1,37 +1,37 @@
 #!/bin/sh
 #
-# GR33N - construye usrsctp para PS3 (PSL1GHT / ppu-gcc)
+# GR33N - builds usrsctp for PS3 (PSL1GHT / ppu-gcc)
 #
 #   sh build-usrsctp.sh
 #
-# Deja $HOME/.gr33n-deps/usrsctp-ps3/ con:
+# Leaves $HOME/.gr33n-deps/usrsctp-ps3/ with:
 #   include/usrsctp.h
 #   lib/libusrsctp.a
 #
-# POR QUE ENTRA usrsctp EN EL PROYECTO. El input de xCloud va por cuatro
-# canales de datos SCTP -control, input, message, chat-, todos ORDENADOS y
-# FIABLES, y el protocolo de input v1 manda el estado absoluto del mando
-# numerado por una secuencia: el servidor deja de aplicarlo en cuanto ve un
-# hueco. libpeer trae un SCTP propio de 733 lineas que NO retransmite (ante
-# un hueco hace `tsn = cumulative_tsn_ack + 1` con la logica de verdad
-# comentada al lado), asi que no sirve. Ver claude/webrtc-portado.md.
+# WHY usrsctp IS IN THE PROJECT AT ALL. xCloud's input runs over four SCTP
+# data channels -control, input, message, chat-, all ORDERED and RELIABLE,
+# and the input protocol v1 sends the controller's absolute state numbered
+# by a sequence: the server stops applying it the moment it sees a gap.
+# libpeer brings its own 733-line SCTP that does NOT retransmit (faced with
+# a gap it does `tsn = cumulative_tsn_ack + 1`, with the real logic commented
+# out right next to it), so it will not do. See claude/webrtc-portado.md.
 #
-# LO PRIMERO QUE HACE ESTE SCRIPT NO ES COMPILAR: es averiguar si PSL1GHT
-# trae pthreads, porque de eso depende si esto son 114 lineas de parche o
-# quinientas.
+# THE FIRST THING THIS SCRIPT DOES IS NOT COMPILE: it is finding out whether
+# PSL1GHT brings pthreads, because that decides whether this is a 114-line
+# patch or five hundred.
 #
-# usrsctp quiere pthread_mutex_t, pthread_rwlock_t, pthread_cond_t y
-# pthread_t (sctp_os_userspace.h:299-304). Si la consola los trae, se
-# compila y ya. Si no, hay que escribir una capa que los traduzca a los
-# hilos de lv2 -sysMutexCreate, sysCondCreate, sysThreadCreate-, y eso es
-# otro trabajo. La sonda de abajo lo dice en dos segundos en vez de
-# descubrirlo entre veintitres ficheros de errores.
+# usrsctp wants pthread_mutex_t, pthread_rwlock_t, pthread_cond_t and
+# pthread_t (sctp_os_userspace.h:299-304). If the console brings them, it
+# just compiles. If not, someone has to write a layer that translates them
+# into lv2 threads -sysMutexCreate, sysCondCreate, sysThreadCreate-, and
+# that is a whole other job. The probe below says which in two seconds
+# instead of it being discovered among twenty-three files' worth of errors.
 #
-# LO DEMAS YA ESTA PROBADO, aunque no con ppu-gcc: los 23 ficheros compilan
-# limpios para PowerPC64 big-endian con el cruzado de Debian. Los unicos
-# errores que salieron alli fueron por sa_len -- la glibc del PC no lo
-# tiene y la newlib de PSL1GHT si-, o sea justo lo contrario del problema
-# que tendriamos aqui.
+# EVERYTHING ELSE IS ALREADY PROVEN, though not with ppu-gcc: the 23 files
+# compile clean for PowerPC64 big-endian with the Debian cross-compiler.
+# The only errors that came up there were over sa_len -- the PC's glibc
+# does not have it and PSL1GHT's newlib does-, i.e. exactly the opposite
+# of the problem we would have here.
 
 set -e
 
@@ -50,15 +50,15 @@ OUT="$WORK/usrsctp-ps3"
 mkdir -p "$WORK"
 
 if [ ! -x "$CC" ]; then
-	echo "no encuentro $CC"
+	echo "cannot find $CC"
 	exit 1
 fi
 
-# --- las cabeceras de PSL1GHT ------------------------------------------
+# --- the PSL1GHT headers -----------------------------------------------
 #
-# No estan en la ruta por defecto de ppu-gcc: las mete $(LIBPSL1GHT_INC)
-# desde ppu_rules, o sea el Makefile del proyecto. Compilando a mano no las
-# pone nadie, y eso ya nos costo una vuelta con libSRTP.
+# They are not on ppu-gcc's default path: $(LIBPSL1GHT_INC) puts them there
+# from ppu_rules, i.e. the project's Makefile. Compiling by hand, nobody
+# sets that, and that already cost us a round with libSRTP.
 
 PSL_INC=""
 for d in "$PS3DEV/ppu/include" "$PSL1GHT/ppu/include" \
@@ -66,63 +66,65 @@ for d in "$PS3DEV/ppu/include" "$PSL1GHT/ppu/include" \
 	if [ -f "$d/netinet/in.h" ]; then
 		PSL_INC="-I$d"
 		PSL_DIR="$d"
-		echo ">> cabeceras de PSL1GHT en $d"
+		echo ">> PSL1GHT headers at $d"
 		break
 	fi
 done
 
 if [ -z "$PSL_INC" ]; then
-	echo "no encuentro netinet/in.h en ninguna ruta de PSL1GHT."
-	echo "Mira donde esta con:  find \$PS3DEV -name in.h -path '*netinet*'"
+	echo "cannot find netinet/in.h in any PSL1GHT path."
+	echo "Find out where it is with:  find \$PS3DEV -name in.h -path '*netinet*'"
 	exit 1
 fi
 
-# --- LA SONDA ----------------------------------------------------------
+# --- THE PROBE ---------------------------------------------------------
 
 echo
-echo ">> mirando que trae la consola"
+echo ">> looking at what the console brings"
 
 PROBE="$WORK/.probe-usrsctp"
 mkdir -p "$PROBE"
 
-# -Werror=implicit-function-declaration NO ES DECORACION: SIN ESO LA SONDA
-# MIENTE.
+# -Werror=implicit-function-declaration IS NOT DECORATION: WITHOUT IT THE
+# PROBE LIES.
 #
-# La vuelta pasada esta sonda dijo que la consola traia CMSG_DATA, CMSG_SPACE
-# y CMSG_LEN. No las trae. El programa de prueba era:
+# Last round this probe said the console brought CMSG_DATA, CMSG_SPACE
+# and CMSG_LEN. It does not. The test program was:
 #
 #     struct cmsghdr c; (void)CMSG_DATA(&c);
 #     return (int)(CMSG_SPACE(4)+CMSG_LEN(4));
 #
-# ...y eso COMPILA aunque las macros no existan, porque en C99 llamar a algo
-# no declarado es un aviso: el compilador se inventa `int CMSG_DATA()` y
-# sigue. La sonda miraba el codigo de salida, veia cero y decia SI.
+# ...and that COMPILES even though the macros do not exist, because in C99
+# calling something undeclared is a warning: the compiler makes up
+# `int CMSG_DATA()` and carries on. The probe checked the exit code, saw
+# zero, and said YES.
 #
-# Es la tercera vez esta semana que una sonda mide donde no es -antes fue
-# BYTE_ORDER preguntando por una cabecera que usrsctp no incluye, y
-# sys/time.h preguntandole al sistema de ficheros en vez de al compilador-,
-# y la que mas gracia tiene, porque la sonda existe precisamente para no
-# suponer. Con estas dos opciones, el aviso pasa a ser el error que siempre
-# debio ser y la respuesta es de fiar.
+# This is the third time this week a probe has measured the wrong thing:
+# before it was BYTE_ORDER asking about a header usrsctp never includes,
+# and sys/time.h asking the filesystem instead of the compiler. This is
+# the funniest one, because the probe exists precisely so as not to
+# assume. With these two flags the warning becomes the error it should
+# always have been, and the answer can be trusted.
 PEDANTE="-Werror=implicit-function-declaration -Werror=implicit-int"
 
-# LAS DE pthreads TIENEN QUE ENLAZAR, NO SOLO COMPILAR.
+# THE pthreads ONES HAVE TO LINK, NOT JUST COMPILE.
 #
-# Esta sonda dijo que si a las cinco preguntas de pthreads, y era mentira.
-# Compilaba con -c, o sea que lo que contestaba era "las cabeceras declaran
-# pthread_mutex_lock" -- verdad, y no la pregunta. La pregunta es si existe
-# el SIMBOLO, y eso solo lo sabe el enlazador.
+# This probe said yes to all five pthreads questions, and it was lying.
+# It compiled with -c, which means what it was actually answering was "the
+# headers declare pthread_mutex_lock" -- true, and not the question. The
+# question is whether the SYMBOL exists, and only the linker knows that.
 #
-# El fallo aparecio al final del todo, enlazando el EBOOT, en forma de mil
-# lineas de "undefined reference to pthread_mutex_lock" desde libusrsctp.a.
-# Con el trabajo entero ya montado encima.
+# The failure showed up right at the very end, linking the EBOOT, as a
+# thousand lines of "undefined reference to pthread_mutex_lock" from
+# libusrsctp.a. With the whole job already built on top of it.
 #
-# Es la misma leccion de CMSG -- "compila" no quiere decir "existe"--
-# aplicada a la pregunta mas cara de todo el port, que es justo la que este
-# script decia estar contestando.
-# -lpthread va DELANTE de -lnet, igual que en el LIBS del Makefile: si
-# la sonda no enlaza con la misma linea que el EBOOT, no esta midiendo
-# lo mismo, y una sonda que no mide lo mismo miente.
+# It is the same CMSG lesson -- "compiles" does not mean "exists" --
+# applied to the most expensive question in the whole port, which is
+# exactly the one this script claimed to be answering.
+# -lpthread goes BEFORE -lnet, just as in the Makefile's LIBS: if the
+# probe does not link with the same line as the EBOOT, it is not
+# measuring the same thing, and a probe that does not measure the same
+# thing lies.
 LIBS_SONDA="-lpthread -lnet -lnetctl -lsysmodule -lrt -llv2 -lm"
 PSL_LIB=""
 [ -n "$PSL_DIR" ] && PSL_LIB="-L$(dirname "$PSL_DIR")/lib"
@@ -130,7 +132,7 @@ PSL_LIB=""
 probar() {
 	nombre=$1
 	codigo=$2
-	solo_compilar=$3      # no vacio = basta con compilar
+	solo_compilar=$3      # not empty = compiling is enough
 
 	printf '%s\n' "$codigo" > "$PROBE/p.c"
 
@@ -138,14 +140,14 @@ probar() {
 		# shellcheck disable=SC2086
 		if $CC -c "$PROBE/p.c" -o "$PROBE/p.o" -std=gnu99 $PEDANTE \
 		   $PSL_INC 2> "$PROBE/p.err"; then
-			echo "   SI   $nombre"
+			echo "   YES  $nombre"
 			return 0
 		fi
 	else
 		# shellcheck disable=SC2086
 		if $CC "$PROBE/p.c" -o "$PROBE/p.elf" -std=gnu99 $PEDANTE \
 		   $PSL_INC $PSL_LIB $LIBS_SONDA 2> "$PROBE/p.err"; then
-			echo "   SI   $nombre"
+			echo "   YES  $nombre"
 			return 0
 		fi
 	fi
@@ -182,49 +184,51 @@ return 0;}' || falta=1
 probar "sys/socket.h" '#include <sys/socket.h>
 int main(void){return 0;}' 1 || falta=1
 
-probar "sockaddr con sa_len (familia BSD)" '#include <netinet/in.h>
+probar "sockaddr with sa_len (BSD family)" '#include <netinet/in.h>
 int main(void){struct sockaddr_in a; a.sin_len=0; return a.sin_len;}' 1 || falta=1
 
-# ESTA NO CUENTA PARA `falta`: no es un requisito, es una pregunta.
+# THIS ONE DOES NOT COUNT TOWARDS `falta`: it is not a requirement, it is
+# a question.
 #
-# PSL1GHT define struct iovec -- lo mete algo que incluye su sys/socket.h --
-# pero NO tiene el fichero sys/uio.h. Esa combinacion es rara y hay que
-# preguntarla, porque desde el preprocesador no se puede saber si un struct
-# ya existe, y PSL1GHT no lo marca con ninguna de las macros habituales.
+# PSL1GHT defines struct iovec -- something that includes its sys/socket.h
+# pulls it in -- but it does NOT have the file sys/uio.h. That combination
+# is unusual and has to be asked about, because from the preprocessor there
+# is no way to know whether a struct already exists, and PSL1GHT does not
+# flag it with any of the usual macros.
 IOVEC_DEF=""
-if probar "struct iovec (ya la trae la consola)" '#include <sys/socket.h>
+if probar "struct iovec (console already brings it)" '#include <sys/socket.h>
 int main(void){struct iovec v; v.iov_base=0; v.iov_len=0;
 return (int)v.iov_len;}' 1; then
 	IOVEC_DEF="-DGR33N_HAVE_IOVEC=1"
 fi
 
-# Y lo mismo con IPv6. Tampoco cuenta para `falta`: la PS3 no habla IPv6 y
-# eso esta bien. Pero usrsctp declara campos de tipo struct in6_addr y
-# struct sockaddr_in6 SIN guardarlos tras INET6 (user_inpcb.h:72 y :77,
-# usrsctp.h:152), dentro de uniones que se reservan enteras. El tipo tiene
-# que existir aunque no se use nunca; compilar con -DINET a secas no evita
-# esas lineas, solo el codigo que las mira.
+# And the same with IPv6. It does not count towards `falta` either: the PS3
+# does not speak IPv6 and that is fine. But usrsctp declares fields of type
+# struct in6_addr and struct sockaddr_in6 WITHOUT guarding them behind INET6
+# (user_inpcb.h:72 and :77, usrsctp.h:152), inside unions that get reserved
+# whole. The type has to exist even if it is never used; compiling with
+# plain -DINET does not skip those lines, only the code that looks at them.
 IN6_DEF=""
-if probar "struct in6_addr (ya la trae la consola)" '#include <netinet/in.h>
+if probar "struct in6_addr (console already brings it)" '#include <netinet/in.h>
 int main(void){struct in6_addr a; struct sockaddr_in6 s;
 (void)a;(void)s;return 0;}' 1; then
 	IN6_DEF="-DGR33N_HAVE_IN6=1"
 fi
 
-# Y sockaddr_storage, que usrsctp declara en sctp_uio.h:348 y :574 dentro
-# de estructuras que se reservan enteras.
+# And sockaddr_storage, which usrsctp declares in sctp_uio.h:348 and :574
+# inside structures that get reserved whole.
 SS_DEF=""
-if probar "struct sockaddr_storage (ya la trae)" '#include <sys/socket.h>
+if probar "struct sockaddr_storage (already brings it)" '#include <sys/socket.h>
 int main(void){struct sockaddr_storage a;(void)a;return 0;}' 1; then
 	SS_DEF="-DGR33N_HAVE_SS=1"
 fi
 
-# Y la ultima: struct in_pktinfo, que solo hace falta si la consola define
-# IP_PKTINFO. Si no define ni eso ni IP_RECVDSTADDR, user_recv_thread.c se
-# planta con un #error; la envoltura de netinet/in.h declara la de BSD para
-# ese caso.
+# And the last one: struct in_pktinfo, only needed if the console defines
+# IP_PKTINFO. If it defines neither that nor IP_RECVDSTADDR, user_recv_thread.c
+# stops dead with a #error; the netinet/in.h wrapper declares the BSD one
+# for that case.
 PKT_DEF=""
-if probar "struct in_pktinfo (ya la trae)" '#include <netinet/in.h>
+if probar "struct in_pktinfo (already brings it)" '#include <netinet/in.h>
 int main(void){struct in_pktinfo a;(void)a;return 0;}' 1; then
 	PKT_DEF="-DGR33N_HAVE_PKTINFO=1"
 fi
@@ -233,58 +237,58 @@ echo
 
 if [ "$falta" -ne 0 ]; then
 	cat <<'FIN'
->> FALTA ALGO, y eso cambia el plan.
+>> SOMETHING IS MISSING, and that changes the plan.
 
-   usrsctp usa pthreads directamente en sctp_os_userspace.h (lineas
-   299-304): mutex, rwlock, variable de condicion e hilos. Si PSL1GHT no
-   los trae, hay que escribir una capa de traduccion a lv2:
+   usrsctp uses pthreads directly in sctp_os_userspace.h (lines
+   299-304): mutex, rwlock, condition variable and threads. If PSL1GHT
+   does not bring them, someone has to write a translation layer to lv2:
 
      pthread_mutex_t   -> sys_mutex_t      (sysMutexCreate/Lock/Unlock)
      pthread_cond_t    -> sys_cond_t       (sysCondCreate/Wait/Signal)
-     pthread_rwlock_t  -> un mutex a secas (SCTP no depende de que dos
-                          lectores entren a la vez; perder eso cuesta
-                          rendimiento, no correccion)
+     pthread_rwlock_t  -> a plain mutex    (SCTP does not depend on two
+                          readers going in at once; losing that costs
+                          performance, not correctness)
      pthread_t         -> sys_ppu_thread_t (sysThreadCreate/Join)
 
-   Es una cabecera de sustitucion y unos cuantos envoltorios, no un
-   rediseño. Pero es trabajo, y mejor saberlo ahora.
+   It is a shim header and a handful of wrappers, not a
+   redesign. But it is work, and better to know now.
 
-   Pega esta salida entera y seguimos por ahi.
+   Paste this whole output and we carry on from there.
 FIN
 	exit 1
 fi
 
-# --- LOS TIPOS BSD, GENERADOS Y NO ADIVINADOS --------------------------
+# --- THE BSD TYPES, GENERATED AND NOT GUESSED --------------------------
 #
-# Las cabeceras que vienen de FreeBSD usan los nombres BSD de toda la vida:
-# u_int16_t, u_char, caddr_t. Newlib trae unos si y otros no, y cuales
-# exactamente depende de como se compilo -- no es una lista que se pueda
-# saber de memoria.
+# The headers that come from FreeBSD use the good old BSD names:
+# u_int16_t, u_char, caddr_t. Newlib brings some and not others, and which
+# ones exactly depends on how it was built -- it is not a list you can
+# know from memory.
 #
-# Asi que se prueban uno a uno y se escribe una cabecera con SOLO los que
-# falten. Definirlos todos a lo bruto chocaria con los que si estan
-# (redefinir un typedef es error en C99), y definir de menos deja el mismo
-# fallo que teniamos.
+# So they get tested one by one and a header gets written with ONLY the
+# ones that are missing. Defining all of them outright would clash with
+# the ones that do exist (redefining a typedef is an error in C99), and
+# defining too few leaves the same failure we already had.
 #
-# Esto salio de que in_systm.h de FreeBSD usa u_int16_t y ppu-gcc no lo
-# conoce: 22 ficheros con el mismo error. Tercera vez que una cabecera
-# prestada trae una dependencia que la consola no tiene, asi que esta vez
-# se resuelve la CLASE de problema y no el caso.
+# This came from in_systm.h in FreeBSD using u_int16_t, which ppu-gcc does
+# not know: 22 files with the same error. Third time a borrowed header
+# has brought in a dependency the console does not have, so this time it
+# is the CLASS of problem being fixed, not the instance.
 
 TIPOS="$WORK/.bsdtypes"
 mkdir -p "$TIPOS"
 BSDH="$TIPOS/gr33n_bsdtypes.h"
 
 {
-	echo "/* GENERADO por build-usrsctp.sh. No editar: se rehace cada vez."
-	echo " * Contiene SOLO los tipos BSD que esta newlib no trae. */"
+	echo "/* GENERATED by build-usrsctp.sh. Do not edit: rebuilt every time."
+	echo " * Contains ONLY the BSD types this newlib does not bring. */"
 	echo "#ifndef GR33N_BSDTYPES_H"
 	echo "#define GR33N_BSDTYPES_H"
 	echo "#include <stdint.h>"
 	echo "#include <sys/types.h>"
 } > "$BSDH"
 
-echo ">> tipos BSD que hay que poner"
+echo ">> BSD types that need adding"
 n_tipos=0
 
 tipo_bsd() {
@@ -296,7 +300,7 @@ tipo_bsd() {
 	fi
 
 	echo "typedef $2 $1;" >> "$BSDH"
-	echo "   falta $1, se define como $2"
+	echo "   $1 is missing, defined as $2"
 	n_tipos=$((n_tipos + 1))
 }
 
@@ -310,14 +314,14 @@ tipo_bsd u_int      "unsigned int"
 tipo_bsd u_long     "unsigned long"
 tipo_bsd caddr_t    "char *"
 
-# n_short, n_long y n_time NO van aqui: los define netinet/in_systm.h, que
-# es su sitio de siempre, y ponerlos en los dos lados es un typedef
-# duplicado, que en C99 es error y no aviso.
+# n_short, n_long and n_time do NOT go here: netinet/in_systm.h defines
+# them, which is where they always belong, and putting them in both
+# places is a duplicate typedef, which in C99 is an error, not a warning.
 
-# --- Y BYTE_ORDER, QUE ES EL PEOR DE TODOS -----------------------------
+# --- AND BYTE_ORDER, THE WORST OF THE LOT ------------------------------
 #
-# netinet/ip.h de FreeBSD declara struct ip DOS VECES, una por orden de
-# bytes:
+# FreeBSD's netinet/ip.h declares struct ip TWICE, once for each byte
+# order:
 #
 #     #if BYTE_ORDER == LITTLE_ENDIAN
 #             u_char ip_hl:4, ip_v:4;
@@ -326,30 +330,30 @@ tipo_bsd caddr_t    "char *"
 #             u_char ip_v:4, ip_hl:4;
 #     #endif
 #
-# Si BYTE_ORDER no esta definido, el preprocesador de C trata los
-# identificadores desconocidos como CERO. O sea que las dos comparaciones
-# dan 0 == 0, verdadero, y se compilan LAS DOS RAMAS: "duplicate member
-# ip_v", 22 veces.
+# If BYTE_ORDER is not defined, the C preprocessor treats unknown
+# identifiers as ZERO. Which means both comparisons come out 0 == 0,
+# true, and BOTH BRANCHES get compiled: "duplicate member
+# ip_v", 22 times.
 #
-# Y ojo con lo que esto significa de verdad. Aqui el fallo fue ruidoso
-# porque los miembros se repiten. Pero el mismo mecanismo, en una cabecera
-# donde las dos ramas no chocaran, elegiria la de little-endian EN SILENCIO
-# sobre una maquina big-endian. Ese es exactamente el fallo que llevamos
-# toda la semana persiguiendo, y aqui lo produce una macro que falta.
+# And take care over what this really means. Here the failure was noisy
+# because the members repeat. But the same mechanism, in a header where
+# the two branches did not clash, would pick the little-endian one IN
+# SILENCE on a big-endian machine. That is exactly the failure we have
+# been chasing all week, and here it is produced by a missing macro.
 #
-# Se pregunta si la consola lo trae bien puesto; si no, se pone aqui, en la
-# cabecera que entra con -include antes que ninguna otra.
+# It asks whether the console has it set up correctly; if not, it is set
+# here, in the header that goes in with -include before any other.
 
-# LA PRIMERA VERSION DE ESTA SONDA PREGUNTO LO QUE NO ERA.
+# THE FIRST VERSION OF THIS PROBE ASKED THE WRONG QUESTION.
 #
-# Incluia <machine/endian.h> y comprobaba que de ahi saliera BYTE_ORDER
-# bien puesto. Salia, y dijo "la consola lo trae bien puesto" -- y luego
-# fallaron los 22 ficheros igual, porque usrsctp NO incluye esa cabecera en
-# ningun momento. La pregunta buena no era "se puede conseguir BYTE_ORDER"
-# sino "esta BYTE_ORDER cuando ip.h se lee".
+# It included <machine/endian.h> and checked that BYTE_ORDER came out of
+# it set correctly. It did, and it said "the console has it set up
+# correctly" -- and then the same 22 files failed anyway, because usrsctp
+# NEVER includes that header at all. The right question was not "can
+# BYTE_ORDER be obtained" but "is BYTE_ORDER set by the time ip.h is read".
 #
-# Se prueba una cabecera detras de otra y se usa LA DE LA CONSOLA, con sus
-# valores, en vez de inventarse unos propios que podrian no coincidir.
+# One header after another gets tried and THE CONSOLE'S OWN is used, with
+# its values, instead of making up ones of our own that might not match.
 
 END_INC=""
 for cab in machine/endian.h sys/endian.h endian.h; do
@@ -368,21 +372,21 @@ for cab in machine/endian.h sys/endian.h endian.h; do
 done
 
 if [ -n "$END_INC" ]; then
-	echo "   BYTE_ORDER: sale de <$END_INC>, y se fuerza en todos los ficheros"
+	echo "   BYTE_ORDER: comes from <$END_INC>, and is forced in every file"
 	{
 		echo ""
-		echo "/* De la propia consola, con SUS valores. Sin esto,"
-		echo " * netinet/ip.h compila sus dos ramas de orden de bytes a la"
-		echo " * vez: en C un identificador desconocido dentro de un #if"
-		echo " * vale 0, y 0 == 0 es verdad las dos veces. */"
+		echo "/* From the console itself, with ITS values. Without this,"
+		echo " * netinet/ip.h compiles both its byte-order branches at the"
+		echo " * same time: in C an unknown identifier inside an #if"
+		echo " * is worth 0, and 0 == 0 is true both times. */"
 		echo "#include <$END_INC>"
 	} >> "$BSDH"
 else
-	echo "   BYTE_ORDER: no lo da ninguna cabecera; se pone a mano"
+	echo "   BYTE_ORDER: no header provides it; setting it by hand"
 	{
 		echo ""
-		echo "/* Ninguna cabecera de la consola lo da, asi que va a mano."
-		echo " * Sin esto, netinet/ip.h compila sus dos ramas a la vez. */"
+		echo "/* No header from the console provides it, so it goes in by hand."
+		echo " * Without this, netinet/ip.h compiles both its branches at once. */"
 		echo "#ifndef LITTLE_ENDIAN"
 		echo "#define LITTLE_ENDIAN 1234"
 		echo "#endif"
@@ -400,35 +404,36 @@ n_tipos=$((n_tipos + 1))
 echo "#endif" >> "$BSDH"
 
 if [ "$n_tipos" -eq 0 ]; then
-	echo "   ninguno: la consola los trae todos"
+	echo "   none: the console brings them all"
 fi
 
-# --- DE DONDE SALE sysGetRandomNumber ----------------------------------
+# --- WHERE sysGetRandomNumber COMES FROM -------------------------------
 #
-# ESTE BLOQUE EXISTE PORQUE ME LO INVENTE.
+# THIS BLOCK EXISTS BECAUSE I MADE IT UP.
 #
-# El parche de user_environment.c ponia `#include <lv2/random.h>` porque
-# sonaba a lo que deberia llamarse. No existe. Los 23 ficheros no se
-# enteraron -solo ese-, pero es exactamente la misma clase de fallo que
-# llevamos toda la semana: la respuesta plausible usada sin comprobar.
+# The user_environment.c patch put `#include <lv2/random.h>` because it
+# sounded like what it should be called. It does not exist. The 23 files
+# did not notice -only that one did-, but it is exactly the same class
+# of failure we have had all week: the plausible answer, used unchecked.
 #
-# Lo que se sabe de verdad: source/net_tls.c de GR33N llama a
-# sysGetRandomNumber y compila desde hace semanas. Pero incluye SIETE
-# cabeceras de PSL1GHT y no hay forma de saber desde aqui cual de ellas la
-# declara -las cabeceras estan en tu WSL, no en la mia-. Asi que se prueban
-# una a una, con -Werror=implicit-function-declaration para que "compila con
-# un aviso" no cuente como exito.
+# What is actually known: GR33N's source/net_tls.c calls
+# sysGetRandomNumber and has been compiling for weeks. But it includes
+# SEVEN PSL1GHT headers and there is no way to know from here which one
+# declares it -the headers are on your WSL, not on mine-. So they are
+# tried one by one, with -Werror=implicit-function-declaration so that
+# "compiles with a warning" does not count as a success.
 #
-# Si ninguna cuela, se deja el prototipo a mano y se avisa por pantalla: hay
-# que verificarlo contra la cabecera de verdad antes de fiarse, porque una
-# firma equivocada aqui no da error, da entropia rota. Y una fuente de
-# entropia rota no se nota: da claves predecibles.
+# If none of them work, the prototype is left by hand and a warning is
+# printed to the screen: it has to be checked against the real header
+# before trusting it, because a wrong signature here gives no error, it
+# gives broken entropy. And a broken entropy source does not show itself:
+# it gives predictable keys.
 
 RNDH="$TIPOS/gr33n_ps3_random.h"
 RND_CAB=""
 
 echo
-echo ">> de donde sale sysGetRandomNumber"
+echo ">> where sysGetRandomNumber comes from"
 
 for cab in lv2/system.h sys/random_number.h lv2/random_number.h ppu-lv2.h \
            lv2/lv2.h sys/systime.h lv2/systime.h net/net.h; do
@@ -446,28 +451,28 @@ for cab in lv2/system.h sys/random_number.h lv2/random_number.h ppu-lv2.h \
 done
 
 {
-	echo "/* GENERADO por build-usrsctp.sh. No editar: se rehace cada vez."
-	echo " * Lo incluye el parche de user_environment.c. */"
+	echo "/* GENERATED by build-usrsctp.sh. Do not edit: rebuilt every time."
+	echo " * Included by the user_environment.c patch. */"
 	echo "#ifndef GR33N_PS3_RANDOM_H"
 	echo "#define GR33N_PS3_RANDOM_H"
 } > "$RNDH"
 
 if [ -n "$RND_CAB" ]; then
-	echo "   la declara <$RND_CAB>"
+	echo "   <$RND_CAB> declares it"
 	echo "#include <$RND_CAB>" >> "$RNDH"
 else
-	echo "   !! NINGUNA de las candidatas la declara."
-	echo "      Se pone el prototipo a mano, PERO HAY QUE COMPROBARLO:"
-	echo "      busca la buena con"
+	echo "   !! NONE of the candidates declare it."
+	echo "      Setting the prototype by hand, BUT IT HAS TO BE CHECKED:"
+	echo "      find the right one with"
 	echo "        grep -rl sysGetRandomNumber \$PS3DEV/ppu/include"
-	echo "      y pegame la linea de la declaracion."
+	echo "      and paste me the declaration line."
 	{
-		echo "/* NO SE ENCONTRO LA CABECERA. Prototipo deducido de la"
-		echo " * llamada de source/net_tls.c:245, que compila:"
+		echo "/* THE HEADER WAS NOT FOUND. Prototype deduced from the"
+		echo " * call in source/net_tls.c:245, which compiles:"
 		echo " *     ret = sysGetRandomNumber(tmp, (u64)ask);"
-		echo " * Si la firma de verdad no es esta, el enlazado cuela"
-		echo " * igual -en C no hay decoracion de nombres- y lo que"
-		echo " * sale roto es la entropia, en silencio. */"
+		echo " * If the real signature is not this one, the link goes"
+		echo " * through just the same -in C there is no name mangling-"
+		echo " * and what comes out broken is the entropy, silently. */"
 		echo "int sysGetRandomNumber(void *addr, unsigned long long size);"
 	} >> "$RNDH"
 fi
@@ -475,32 +480,33 @@ fi
 echo "#endif" >> "$RNDH"
 
 echo
-echo ">> la consola trae todo lo que usrsctp pide. Adelante."
+echo ">> the console brings everything usrsctp asks for. Onward."
 echo
 
-# --- las cabeceras que a PSL1GHT le faltan ------------------------------
+# --- the headers PSL1GHT is missing -------------------------------------
 #
-# deps/sonda-cabeceras.sh pregunto por 43 y PSL1GHT trae 27. Faltan 16, y
-# ademas su sys/queue.h existe SIN NINGUNA macro TAILQ, que usrsctp usa por
-# todas partes -- 68 macros distintas de LIST, SLIST, STAILQ y TAILQ.
+# deps/sonda-cabeceras.sh asked about 43 and PSL1GHT brings 27. 16 are
+# missing, and on top of that its sys/queue.h exists with NOT A SINGLE
+# TAILQ macro, which usrsctp uses everywhere -- 68 different macros of
+# LIST, SLIST, STAILQ and TAILQ.
 #
-# Las de formato de cable (netinet/ip.h, udp.h) y sys/queue.h vienen de
-# FreeBSD tal cual, con su licencia. Escribir de memoria una struct de
-# cable con campos de bits, en la plataforma donde el orden de bytes ya nos
-# ha mordido esta semana, seria tentar a la suerte.
+# The wire-format ones (netinet/ip.h, udp.h) and sys/queue.h come from
+# FreeBSD as-is, under their licence. Writing a wire struct with bitfields
+# from memory, on the platform where byte order has already bitten us
+# this week, would be tempting fate.
 #
-# OJO A LA VUELTA DE TUERCA: el TIPO struct iovec si existe en PSL1GHT -- lo
-# define algo que incluye su sys/socket.h -- pero el FICHERO no. Asi que el
-# sustituto no puede definir el struct a ciegas (sale "redefinition") ni
-# puede quedarse vacio (falta UIO_MAXIOV, que usrsctp usa en
-# user_socket.c:585). Lo resuelve la sonda de arriba, que pregunta en vez
-# de suponer. Ver el comentario largo de ps3-shim/sys/uio.h.
+# MIND THE TWIST: the TYPE struct iovec does exist in PSL1GHT -- something
+# that includes its sys/socket.h defines it -- but the FILE does not. So
+# the shim cannot define the struct blindly (that gives "redefinition")
+# nor can it be left empty (UIO_MAXIOV is missing, which usrsctp uses in
+# user_socket.c:585). The probe above resolves it, by asking instead of
+# assuming. See the long comment in ps3-shim/sys/uio.h.
 #
-# De readv y writev no hay que preocuparse: en todo usrsctplib no hay una
-# sola llamada a ninguna de las dos.
+# No need to worry about readv and writev: in the whole of usrsctplib
+# there is not a single call to either one.
 #
-# El directorio va DELANTE de las cabeceras de PSL1GHT en la ruta, pero
-# solo contiene uio.h: todo lo demas lo sigue resolviendo la consola.
+# The directory goes AHEAD of the PSL1GHT headers on the path, but it
+# only contains uio.h: the console keeps resolving everything else.
 
 SHIM="$HERE/ps3-shim"
 
@@ -508,50 +514,52 @@ for f in sys/uio.h sys/queue.h sys/socket.h sys/time.h net/if.h ifaddrs.h \
          netinet/ip.h netinet/udp.h netinet/in_systm.h netinet/in.h \
          endian.h errno.h ps3_stubs.c; do
 	if [ ! -f "$SHIM/$f" ]; then
-		echo "falta $SHIM/$f"
-		echo "el arbol de sustitutos tiene que estar en deps/ps3-shim/"
+		echo "missing $SHIM/$f"
+		echo "the shim tree has to be at deps/ps3-shim/"
 		exit 1
 	fi
 done
 
-echo ">> cabeceras de sustitucion en $SHIM"
-echo "   (16 que PSL1GHT no trae, mas sys/queue.h porque la suya no tiene"
-echo "    ni una macro TAILQ. Ver $SHIM/LEEME.md)"
+echo ">> shim headers at $SHIM"
+echo "   (16 that PSL1GHT does not bring, plus sys/queue.h because its own"
+echo "    does not have a single TAILQ macro. See $SHIM/README.md)"
 
-# --- fuentes ------------------------------------------------------------
+# --- sources ------------------------------------------------------------
 
 if [ ! -d "$SRC" ]; then
-	echo ">> clonando usrsctp"
+	echo ">> cloning usrsctp"
 	git clone --depth 1 https://github.com/sctplab/usrsctp.git "$SRC"
 else
-	echo ">> usando $SRC (ya clonado)"
+	echo ">> using $SRC (already cloned)"
 fi
 
-# --- el parche ----------------------------------------------------------
+# --- the patch ----------------------------------------------------------
 #
-# Tres cambios, y el primero es el que evita una tarde perdida:
+# Three changes, and the first is the one that saves a wasted afternoon:
 #
-#   1. sockaddr_conn con el byte de longitud delante. La newlib de PSL1GHT
-#      viene de BSD, asi que struct sockaddr lleva sa_len y la familia va
-#      en el desplazamiento 1. Sin esto, sconn_family se lee mal y se
-#      corrompe el monton al crear el socket. Diagnostico de green-nx, que
-#      se lo comio en Switch con la misma familia de newlib.
-#   2. read_random sobre sysGetRandomNumber, con la comprobacion de que no
-#      devuelva solo ceros.
-#   3. La misma definicion en la cabecera publica y en la interna.
+#   1. sockaddr_conn with the length byte in front. PSL1GHT's newlib
+#      comes from BSD, so struct sockaddr carries sa_len and the family
+#      goes at offset 1. Without this, sconn_family is read wrong and
+#      the heap gets corrupted when creating the socket. Diagnosed from
+#      green-nx, which ran into this on Switch with the same newlib family.
+#   2. read_random on top of sysGetRandomNumber, with a check that it
+#      does not return all zeros.
+#   3. The same definition in the public header and in the internal one.
 
 cd "$SRC"
 
-# PRIMERO SE DESHACE LO DE LA VUELTA ANTERIOR.
+# THE PREVIOUS ROUND'S PATCH IS UNDONE FIRST.
 #
-# $SRC es un clon de upstream y NADIE lo edita a mano: lo unico que cambia
-# ahi dentro es este parche. Asi que devolverlo a como vino no pierde nada.
+# $SRC is a clone of upstream and NOBODY edits it by hand: the only thing
+# that changes in there is this patch. Putting it back as it came loses
+# nothing.
 #
-# Sin esto, cada vez que el parche cambia el script se planta: el de antes
-# ya esta aplicado, el nuevo no encaja sobre el, y `git apply --reverse`
-# tampoco, porque no son el mismo parche. Salia "el parche no aplica sobre
-# esta version de usrsctp / probablemente upstream ha cambiado", que es un
-# diagnostico falso y de los que mandan a mirar donde no es.
+# Without this, every time the patch changes the script gets stuck: the
+# old one is already applied, the new one does not fit on top of it, and
+# `git apply --reverse` does not either, because they are not the same
+# patch. It would print "the patch does not apply to this version of
+# usrsctp / upstream has probably changed", which is a false diagnosis
+# that sends you looking in the wrong place.
 if git rev-parse --git-dir > /dev/null 2>&1; then
 	git checkout -- . 2>/dev/null || true
 	git clean -fd > /dev/null 2>&1 || true
@@ -559,119 +567,120 @@ fi
 
 if git apply --check "$HERE/usrsctp-ps3.patch" 2>/dev/null; then
 	git apply "$HERE/usrsctp-ps3.patch"
-	echo ">> parche de PS3 aplicado"
+	echo ">> PS3 patch applied"
 elif git apply --reverse --check "$HERE/usrsctp-ps3.patch" 2>/dev/null; then
-	echo ">> el parche de PS3 ya estaba aplicado"
+	echo ">> the PS3 patch was already applied"
 else
-	echo "!! el parche no aplica sobre esta version de usrsctp."
-	echo "   Probablemente upstream ha cambiado. Pega esto y lo rehago:"
+	echo "!! the patch does not apply to this version of usrsctp."
+	echo "   Upstream has probably changed. Paste this and I will redo it:"
 	git apply --verbose "$HERE/usrsctp-ps3.patch" 2>&1 | head -20
 	exit 1
 fi
 cd - > /dev/null
 
-# --- compilacion --------------------------------------------------------
+# --- compilation --------------------------------------------------------
 
 CFLAGS="-O2 -Wall -std=gnu99 -mcpu=cell"
 
-# El sustituto PRIMERO, para que <sys/uio.h> lo encuentre; el resto de
-# <sys/...> lo sigue poniendo PSL1GHT porque ahi dentro no hay nada mas.
+# The shim FIRST, so <sys/uio.h> is found there; the rest of the
+# <sys/...> headers PSL1GHT still supplies, since there is nothing else in there.
 CFLAGS="$CFLAGS -I$SHIM $IOVEC_DEF $IN6_DEF $SS_DEF $PKT_DEF"
 
-# Los tipos BSD que falten, delante de todo. Ver el bloque de arriba.
+# The missing BSD types, ahead of everything. See the block above.
 CFLAGS="$CFLAGS -include $BSDH"
 
-# Y el directorio de lo generado, para que el parche de user_environment.c
-# encuentre gr33n_ps3_random.h.
+# And the directory of generated stuff, so that the user_environment.c
+# patch finds gr33n_ps3_random.h.
 CFLAGS="$CFLAGS -I$TIPOS"
 
 CFLAGS="$CFLAGS -I$SRC/usrsctplib -I$SRC/usrsctplib/netinet $PSL_INC"
 
-# LA OPCION QUE HABRIA AHORRADO LA VUELTA ANTERIOR.
+# THE FLAG THAT WOULD HAVE SAVED THE PREVIOUS ROUND.
 #
-# Sin esto, una macro que no existe -CMSG_SPACE, timercmp, timingsafe_bcmp-
-# se convierte en una llamada a funcion implicita, que en C99 es un AVISO. El
-# fichero compila, entra en la biblioteca, y el fallo aparece mas tarde y en
-# otro sitio:
+# Without this, a macro that does not exist -CMSG_SPACE, timercmp,
+# timingsafe_bcmp- turns into an implicit function call, which in C99 is
+# a WARNING. The file compiles, goes into the library, and the failure
+# shows up later, somewhere else:
 #
-#   - si el simbolo no existe, en el enlazado, sin decir quien lo llamaba;
-#   - si la macro devolvia un PUNTERO -CMSG_DATA, CMSG_NXTHDR-, no aparece
-#     nunca: C99 supone que devuelve int, y en un binario de 32 bits ese int
-#     tiene el mismo tamaño que el puntero. Compila, enlaza, arranca, y
-#     escribe en una direccion truncada dentro de la consola.
+#   - if the symbol does not exist, at link time, without saying who called it;
+#   - if the macro returned a POINTER -CMSG_DATA, CMSG_NXTHDR-, it never
+#     shows up: C99 assumes it returns int, and in a 32-bit binary that
+#     int is the same size as the pointer. It compiles, links, starts,
+#     and writes to a truncated address inside the console.
 #
-# Ese ultimo caso es el que da miedo, y es exactamente el que teniamos:
-# sctp_indata.c hace memcpy(CMSG_DATA(cmh), ...) en el camino de recepcion.
+# That last case is the scary one, and it is exactly the one we had:
+# sctp_indata.c does memcpy(CMSG_DATA(cmh), ...) on the receive path.
 #
-# OJO A LO QUE ESTO PUEDE HACERLE A LA CUENTA. Ficheros que la vuelta pasada
-# "compilaron" pueden fallar ahora, porque antes pasaban con avisos. Eso NO
-# es un retroceso: es lo mismo que ya estaba mal, dicho a tiempo.
+# WATCH WHAT THIS CAN DO TO THE COUNT. Files that "compiled" last round
+# can fail now, because before they passed with warnings. That is NOT
+# a regression: it is the same thing that was already wrong, said in time.
 CFLAGS="$CFLAGS -Werror=implicit-function-declaration -Werror=implicit-int"
 
-# El sys/socket.h de PSL1GHT declara sysNetSelect con un struct timeval*
-# antes de que struct timeval exista, y eso saca un aviso en CADA fichero.
-# No es fallo nuestro y no rompe nada, pero veintidos copias del mismo
-# aviso tapan los que si importan. Incluyendo sys/time.h antes, el tipo ya
-# esta completo cuando se lee esa linea.
+# PSL1GHT's sys/socket.h declares sysNetSelect with a struct timeval*
+# before struct timeval exists, and that throws a warning in EVERY file.
+# It is not our bug and it breaks nothing, but twenty-two copies of the
+# same warning bury the ones that do matter. Including sys/time.h first,
+# the type is already complete by the time that line is read.
 #
-# SE LE PREGUNTA AL COMPILADOR, NO AL SISTEMA DE FICHEROS. La version
-# anterior miraba si existia $PSL_DIR/sys/time.h y no lo encontraba nunca,
-# porque esa cabecera vive en el sysroot de newlib y no en el directorio de
-# PSL1GHT. El aviso siguio saliendo veintidos veces sin que nadie supiera
-# por que. Mismo error que con BYTE_ORDER: preguntar donde no es.
+# THE COMPILER IS ASKED, NOT THE FILESYSTEM. The previous version
+# checked whether $PSL_DIR/sys/time.h existed and never found it,
+# because that header lives in newlib's sysroot and not in PSL1GHT's
+# directory. The warning kept coming out twenty-two times with nobody
+# knowing why. Same mistake as with BYTE_ORDER: asking in the wrong place.
 printf '#include <sys/time.h>\nint main(void){struct timeval t;(void)t;return 0;}\n' \
 	> "$PROBE/tv.c"
 if $CC -c "$PROBE/tv.c" -o "$PROBE/tv.o" -std=gnu99 $PSL_INC > /dev/null 2>&1; then
 	CFLAGS="$CFLAGS -include sys/time.h"
 fi
 
-# LA LINEA DE LA QUE DEPENDE QUE ESTO FUNCIONE.
+# THE LINE EVERYTHING WORKING DEPENDS ON.
 #
-# usrsctp declara sus cabeceras de cable por duplicado y elige con
-# WORDS_BIGENDIAN, que NO autodetecta para esta plataforma: solo se deduce
-# sola para __APPLE__ con PowerPC (sctp_os_userspace.h:278). Sin definirla
-# compila sin un solo aviso con las estructuras de little-endian sobre una
-# maquina big-endian, y todos los paquetes SCTP se leen mal. No hay error:
-# hay input que no llega.
+# usrsctp declares its wire headers in duplicate and picks with
+# WORDS_BIGENDIAN, which does NOT auto-detect for this platform: it only
+# deduces itself for __APPLE__ on PowerPC (sctp_os_userspace.h:278).
+# Without defining it, it compiles without a single warning with the
+# little-endian structures on a big-endian machine, and every SCTP packet
+# gets read wrong. There is no error: there is input that never arrives.
 CFLAGS="$CFLAGS -DWORDS_BIGENDIAN=1"
 
-# Y quien somos, para las tres ramas del parche.
+# And who we are, for the patch's three branches.
 CFLAGS="$CFLAGS -DGR33N_PS3=1"
 
-# Lo que espera usrsctp de un anfitrion de espacio de usuario.
+# What usrsctp expects from a userspace host.
 CFLAGS="$CFLAGS -D__Userspace__ -DSCTP_SIMPLE_ALLOCATOR -DSCTP_PROCESS_LEVEL_LOCKS"
 CFLAGS="$CFLAGS -DHAVE_SA_LEN -DHAVE_SIN_LEN -DHAVE_SIN6_LEN -DHAVE_SCONN_LEN"
 
-# SOLO IPv4, Y A PROPOSITO.
+# IPv4 ONLY, AND ON PURPOSE.
 #
-# Con -DINET6, user_recv_thread.c pide struct in6_pktinfo, que es de los
-# sockets IPv6 en bruto y no existe aqui. Se podria pelear, pero no tiene
-# sentido: la PS3 no habla IPv6, y la direccion IPv6 que da xCloud en
-# /configuration es Teredo -- un tunel sobre IPv4 que tampoco podriamos
-# usar. Declarar soporte de algo que no se puede hacer es la misma clase
-# de mentira que el RESOLUTION=63 del PARAM.SFO que congelaba la consola.
+# With -DINET6, user_recv_thread.c asks for struct in6_pktinfo, which
+# belongs to raw IPv6 sockets and does not exist here. It could be
+# fought, but there is no point: the PS3 does not speak IPv6, and the
+# IPv6 address xCloud gives in /configuration is Teredo -- a tunnel
+# over IPv4 that we could not use either way. Declaring support for
+# something that cannot be done is the same kind of lie as the
+# RESOLUTION=63 in PARAM.SFO that used to freeze the console.
 #
-# Comprobado con el cruzado: con INET6 fallan 1 de 23; sin el, 23 de 23.
+# Checked with the cross-compiler: with INET6, 1 of 23 fails; without it, 23 of 23 do.
 CFLAGS="$CFLAGS -DINET"
 
-# Aliasing estricto fuera, por lo mismo que en libSRTP: SCTP lee palabras
-# de 32 bits desde buffers de char por todas partes.
+# Strict aliasing off, for the same reason as in libSRTP: SCTP reads
+# 32-bit words from char buffers everywhere.
 CFLAGS="$CFLAGS -fno-strict-aliasing"
 
-# usrsctp viene de FreeBSD y arrastra avisos que no son nuestros. Se
-# silencian los de ruido, NUNCA los que hablan de tamaños o punteros.
+# usrsctp comes from FreeBSD and drags along warnings that are not ours.
+# The noisy ones get silenced, NEVER the ones about sizes or pointers.
 CFLAGS="$CFLAGS -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function"
 
-# --- LA SEGUNDA SONDA, ESTA VEZ CON LAS OPCIONES DE VERDAD -------------
+# --- THE SECOND PROBE, THIS TIME WITH THE REAL OPTIONS -----------------
 #
-# La sonda de arriba compila con $PSL_INC a secas. El build compila con el
-# arbol de sustitutos DELANTE, y ahi <sys/socket.h> ya no es el de la
-# consola sino la envoltura de ps3-shim. O sea que las dos preguntas no son
-# la misma pregunta, y la de arriba no puede contestar por esta.
+# The probe above compiles with plain $PSL_INC. The build compiles with
+# the shim tree IN FRONT, and there <sys/socket.h> is no longer the
+# console's own but the ps3-shim wrapper. So the two questions are not
+# the same question, and the one above cannot answer for this one.
 #
-# Es la misma leccion de BYTE_ORDER: medir donde ocurre el problema. Aqui se
-# mide en el sitio exacto, y ademas se dice QUIEN pone cada cosa, para que
-# no haya que deducirlo de los errores la proxima vez.
+# It is the same BYTE_ORDER lesson: measure where the problem happens.
+# Here it is measured at the exact spot, and it also says WHO puts each
+# thing, so nobody has to work it out from the errors next time.
 
 quien_pone() {
 	{
@@ -682,22 +691,22 @@ quien_pone() {
 
 	# shellcheck disable=SC2086
 	if $CC -c "$PROBE/w.c" -o "$PROBE/w.o" $CFLAGS > /dev/null 2>&1; then
-		echo "   $1: lo trae la consola"
+		echo "   $1: the console brings it"
 	else
-		echo "   $1: lo pone ps3-shim"
+		echo "   $1: ps3-shim puts it in"
 	fi
 }
 
 echo
-echo ">> con las opciones del build, quien pone que"
+echo ">> with the build's real options, who puts what"
 quien_pone "CMSG_DATA/SPACE/LEN" sys/socket.h GR33N_CMSG_PUESTAS_AQUI
 quien_pone "CMSG_ALIGN         " sys/socket.h GR33N_CMSG_ALIGN_PUESTA_AQUI
 quien_pone "timercmp/add/sub   " sys/time.h   GR33N_TIMERCMP_PUESTA_AQUI
 echo
 
-# ps3_stubs.c entra en la biblioteca: son las cuatro funciones de enumerar
-# interfaces que usrsctp llama y la consola no tiene. Devuelven "no hay
-# nada", que con AF_CONN es la verdad y no un apaño. Ver LEEME.md.
+# ps3_stubs.c goes into the library: the four interface-enumeration
+# functions usrsctp calls that the console does not have. They return
+# "nothing here", which with AF_CONN is the truth and not a fudge. See README.md.
 FILES="
 $SHIM/ps3_stubs.c
 usrsctplib/netinet/sctp_asconf.c
@@ -724,39 +733,39 @@ usrsctplib/user_mbuf.c
 usrsctplib/user_socket.c
 "
 
-# user_recv_thread.c NO ESTA EN LA LISTA, Y ES A PROPOSITO.
+# user_recv_thread.c IS NOT ON THE LIST, AND THAT IS ON PURPOSE.
 #
-# Es el modo en el que usrsctp abre sus propios sockets -uno crudo de SCTP y
-# otro UDP para el tunel- con hilos dedicados leyendo de ellos. 1500 lineas
-# que llaman a socket(), bind(), setsockopt(), recvmsg() y close(), y PSL1GHT
-# no tiene ninguna con esos nombres: su API es netSocket/netBind/netRecv.
-# Eran cinco simbolos sin resolver en el enlazado del EBOOT por codigo que no
-# se ejecuta nunca, porque libpeer arranca usrsctp con AF_CONN.
+# It is the mode where usrsctp opens its own sockets -one raw SCTP one
+# and one UDP for the tunnel- with dedicated threads reading from them.
+# 1500 lines that call socket(), bind(), setsockopt(), recvmsg() and
+# close(), and PSL1GHT has none with those names: its API is
+# netSocket/netBind/netRecv. They were five unresolved symbols at EBOOT
+# link time, from code that never runs, because libpeer starts usrsctp with AF_CONN.
 #
-# Las DOS unicas funciones que ese fichero exporta -recv_thread_init y
-# recv_thread_destroy, comprobado con nm- estan vacias en ps3_stubs.c, que es
-# lo mismo que hace WebRTC con usrsctp_init_nothreads(). El comentario largo
-# esta alli.
+# The only TWO functions that file exports -recv_thread_init and
+# recv_thread_destroy, checked with nm- are empty in ps3_stubs.c, which
+# is the same thing WebRTC does with usrsctp_init_nothreads(). The long
+# comment is there.
 
 OBJ="$WORK/.obj-usrsctp"
 rm -rf "$OBJ" "$OUT"
 mkdir -p "$OBJ" "$OUT/lib" "$OUT/include"
 
-echo ">> compilando con $(basename "$CC")"
+echo ">> compiling with $(basename "$CC")"
 
 n=0
 fail=0
 for f in $FILES; do
 	b=$(basename "$f" .c)
 
-	# ps3_stubs.c viene con ruta absoluta; el resto cuelga de $SRC.
+	# ps3_stubs.c comes with an absolute path; the rest hangs off $SRC.
 	case "$f" in
 	/*) ruta="$f" ;;
 	*)  ruta="$SRC/$f" ;;
 	esac
 
 	if [ ! -f "$ruta" ]; then
-		echo "   NO EXISTE $ruta"
+		echo "   DOES NOT EXIST $ruta"
 		fail=$((fail + 1))
 		continue
 	fi
@@ -765,27 +774,27 @@ for f in $FILES; do
 		n=$((n + 1))
 	else
 		fail=$((fail + 1))
-		echo "   FALLA $f"
-		# ENTEROS Y SOLO LOS ERRORES.
+		echo "   FAILS $f"
+		# WHOLE, AND ONLY THE ERRORS.
 		#
-		# Antes esto era `head -10`, y en sctp_pcb.c se comio el
-		# tercer error -una asignacion a un pthread_t que es struct-
-		# porque los dos primeros ocupaban las diez lineas con sus
-		# cursores. Una vuelta entera perdida por ahorrar salida.
+		# Before this was `head -10`, and in sctp_pcb.c it ate the third
+		# error -an assignment to a pthread_t which is a struct- because
+		# the first two took up the ten lines with their cursors. A whole
+		# round lost to save on output.
 		#
-		# Se quitan los avisos y las lineas de contexto y se deja el
-		# mensaje de cada error, que es lo unico que hace falta leer.
+		# The warnings and the context lines are stripped and what is left
+		# is the message of each error, which is the only thing worth reading.
 		grep -E "error:|Error [0-9]" "$OBJ/$b.err" | sed 's/^/     /'
 	fi
 done
 
-echo ">> $n compilados, $fail fallidos"
+echo ">> $n compiled, $fail failed"
 
 if [ "$fail" -ne 0 ]; then
 	echo
-	echo "   Los ficheros de error completos -con avisos y contexto- estan en"
-	echo "   $OBJ/*.err  por si hace falta mirar alguno entero."
-	echo "   Pega esta salida y seguimos."
+	echo "   The complete error files -with warnings and context- are in"
+	echo "   $OBJ/*.err  in case one of them needs looking at in full."
+	echo "   Paste this output and we carry on."
 	echo
 	exit 1
 fi
@@ -793,7 +802,7 @@ fi
 "$AR" rcs "$OUT/lib/libusrsctp.a" "$OBJ"/*.o
 cp "$SRC/usrsctplib/usrsctp.h" "$OUT/include/"
 
-# --- que queda sin resolver ---------------------------------------------
+# --- what is left unresolved --------------------------------------------
 
 if [ -x "$NM" ]; then
 	"$NM" --undefined-only "$OUT/lib/libusrsctp.a" 2>/dev/null \
@@ -804,49 +813,49 @@ if [ -x "$NM" ]; then
 	comm -23 "$WORK/.undef" "$WORK/.def" > "$WORK/.falta"
 
 	echo
-	echo ">> simbolos sin resolver:"
+	echo ">> unresolved symbols:"
 	sed 's/^/   /' "$WORK/.falta"
 
 	echo
-	echo "   Esperado: libc de newlib (memcpy, malloc, printf, __errno...),"
-	echo "   pthread_*, usleep, gettimeofday, y sysGetRandomNumber de lv2."
+	echo "   Expected: newlib's libc (memcpy, malloc, printf, __errno...),"
+	echo "   pthread_*, usleep, gettimeofday, and lv2's sysGetRandomNumber."
 
-	# ESTO NO SE MIRA A OJO: SE COMPRUEBA.
+	# THIS IS NOT EYEBALLED: IT IS CHECKED.
 	#
-	# usrsctp habla por AF_CONN, o sea que NO abre sockets: los paquetes se
-	# los damos con usrsctp_conninput() y nos los devuelve por la
-	# devolucion de llamada. Quien los pone en el cable es libpeer, por
-	# DTLS, sobre el socket UDP que ya maneja GR33N.
+	# usrsctp speaks over AF_CONN, meaning it does NOT open sockets: we hand
+	# it packets with usrsctp_conninput() and it gives them back to us
+	# through the callback. The one who puts them on the wire is libpeer,
+	# over DTLS, on the UDP socket GR33N already manages.
 	#
-	# Asi que ninguno de estos nombres deberia quedar pendiente. Y ademas
-	# PSL1GHT no los tiene: su API es netSocket/netBind/netSetSockOpt/
-	# netRecv/netSendTo/netClose. Si aparecen, el EBOOT no enlaza, y el
-	# error saldria mucho mas tarde y hablando de otra cosa.
+	# So none of these names should be left pending. And besides, PSL1GHT
+	# does not have them: its API is netSocket/netBind/netSetSockOpt/
+	# netRecv/netSendTo/netClose. If they turn up, the EBOOT does not link,
+	# and the error would show up much later and talking about something else.
 	#
-	# La vuelta pasada esto era un parrafo pidiendole al lector que mirase.
-	# Miro, y estaban los seis. Un aviso que hay que leer no es una
-	# comprobacion.
+	# Last round this was a paragraph asking the reader to look. They
+	# looked, and all six were there. A warning that has to be read is not
+	# a check.
 	RED=$(grep -x -E 'socket|bind|listen|accept|connect|sendmsg|recvmsg|sendto|recvfrom|setsockopt|getsockopt|ioctl|select|poll' \
 	      "$WORK/.falta" || true)
 
 	if [ -n "$RED" ]; then
 		echo
-		echo "!! HAY SIMBOLOS DE RED SIN RESOLVER:"
+		echo "!! THERE ARE UNRESOLVED NETWORK SYMBOLS:"
 		printf '%s\n' "$RED" | sed 's/^/     /'
 		echo
-		echo "   Con AF_CONN usrsctp no deberia abrir un socket jamas, y"
-		echo "   PSL1GHT no tiene estos nombres. Tal y como esta, el EBOOT"
-		echo "   no va a enlazar."
+		echo "   With AF_CONN usrsctp should never open a socket, and"
+		echo "   PSL1GHT does not have these names. As things stand, the EBOOT"
+		echo "   is not going to link."
 		echo
-		echo "   Para saber QUIEN los pide:"
+		echo "   To find out WHO is asking for them:"
 		echo "     $NM --undefined-only $OUT/lib/libusrsctp.a | less"
-		echo "   (el nombre del .o sale en la linea de arriba de cada bloque)"
+		echo "   (the .o name shows up on the line above each block)"
 		echo
-		echo "   Pega eso y lo miramos."
+		echo "   Paste that and we will take a look."
 	else
 		echo
-		echo "   Y ninguno de red, que es lo que tiene que salir: comprobado"
-		echo "   contra la lista de socket/bind/sendmsg/ioctl/setsockopt..."
+		echo "   And none of them are network ones, which is what is supposed"
+		echo "   to happen: checked against the list of socket/bind/sendmsg/ioctl/setsockopt..."
 	fi
 
 	rm -f "$WORK/.undef" "$WORK/.def" "$WORK/.falta"
@@ -855,4 +864,4 @@ fi
 rm -rf "$OBJ"
 
 echo
-echo ">> listo: $OUT/lib/libusrsctp.a  ($(du -h "$OUT/lib/libusrsctp.a" | cut -f1))"
+echo ">> done: $OUT/lib/libusrsctp.a  ($(du -h "$OUT/lib/libusrsctp.a" | cut -f1))"

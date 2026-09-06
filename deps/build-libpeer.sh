@@ -1,23 +1,23 @@
 #!/bin/sh
 #
-# GR33N - construye libpeer para PS3 (PSL1GHT / ppu-gcc)
+# GR33N - builds libpeer for PS3 (PSL1GHT / ppu-gcc)
 #
 #   sh deps/build-libpeer.sh
 #
-# Deja $HOME/.gr33n-deps/libpeer-ps3/ con:
+# Leaves $HOME/.gr33n-deps/libpeer-ps3/ with:
 #   include/peer.h, peer_connection.h
 #   lib/libpeer.a
 #
-# ES LA ULTIMA DE LAS CUATRO. Antes tienen que estar hechas, en este orden:
+# THIS IS THE LAST OF THE FOUR. The others have to be done first, in this order:
 #
-#   sh deps/build-mbedtls.sh    (108 ficheros, y DTLS-SRTP dentro)
-#   sh deps/build-libsrtp.sh    (18 ficheros)
-#   sh deps/build-usrsctp.sh    (23 ficheros)
+#   sh deps/build-mbedtls.sh    (108 files, with DTLS-SRTP inside)
+#   sh deps/build-libsrtp.sh    (18 files)
+#   sh deps/build-usrsctp.sh    (23 files)
 #
-# LO QUE ES libpeer Y LO QUE NO ES. Son 6653 lineas que pegan entre si mbedTLS
-# (DTLS), libSRTP (el cifrado de los paquetes RTP), usrsctp (los canales de
-# datos) y un agente de ICE propio. No decodifica video ni reensambla nada:
-# eso es de GR33N.
+# WHAT libpeer IS AND WHAT IT ISN'T. It is 6653 lines that glue together mbedTLS
+# (DTLS), libSRTP (the encryption of the RTP packets), usrsctp (the data
+# channels) and an ICE agent of its own. It doesn't decode video or reassemble
+# anything: that's GR33N's job.
 
 set -e
 
@@ -35,34 +35,34 @@ SRC="$WORK/libpeer-src"
 OUT="$WORK/libpeer-ps3"
 
 MBED="$WORK/mbedtls-ps3"
-# libsrtp-ps3, con "lib" delante: es como lo llama build-libsrtp.sh. Aqui
-# ponia srtp-ps3 y el script se plantaba diciendo "corre primero
-# build-libsrtp.sh" justo despues de que build-libsrtp.sh acabara bien.
+# libsrtp-ps3, with "lib" in front: that's what build-libsrtp.sh calls it. This
+# used to say srtp-ps3 and the script would stop dead saying "run
+# build-libsrtp.sh first" right after build-libsrtp.sh had finished fine.
 SRTP="$WORK/libsrtp-ps3"
 SCTP="$WORK/usrsctp-ps3"
 
-# EL COMMIT, Y NO ES CAPRICHO.
+# THE COMMIT, AND IT ISN'T A WHIM.
 #
-# green-nx lo dejo clavado con este aviso: "upstream moves under us (2026-08
+# green-nx left it pinned with this warning: "upstream moves under us (2026-08
 # master broke every hunk of libpeer-switch.patch and bumped mbedtls to the
-# 4.x layout)". Nuestro parche sale del suyo, asi que hereda el pin. Subirlo
-# significa rebasar 41 hunks y volver a probar un stream de verdad.
+# 4.x layout)". Our patch comes out of theirs, so it inherits the pin. Moving
+# it up means rebasing 41 hunks and testing a real stream all over again.
 LIBPEER_REF=9319aa434cb9e893faed0293ba9d2a21eca59c8b
 
 mkdir -p "$WORK"
 
 if [ ! -x "$CC" ]; then
-	echo "no encuentro $CC"
+	echo "can't find $CC"
 	exit 1
 fi
 
-# --- las tres de antes -------------------------------------------------
+# --- the three before this one -----------------------------------------
 
 for d in "$MBED" "$SRTP" "$SCTP"; do
 	if [ ! -d "$d/include" ]; then
-		echo "falta $d"
+		echo "missing $d"
 		echo
-		echo "libpeer necesita las otras tres hechas primero:"
+		echo "libpeer needs the other three done first:"
 		echo "   sh deps/build-mbedtls.sh"
 		echo "   sh deps/build-libsrtp.sh"
 		echo "   sh deps/build-usrsctp.sh"
@@ -70,19 +70,19 @@ for d in "$MBED" "$SRTP" "$SCTP"; do
 	fi
 done
 
-# Y que mbedTLS traiga DTLS-SRTP de verdad. Sin eso, dtls_srtp.c de libpeer
-# se queda sin las dos funciones de las que salen las claves de SRTP, y el
-# error saldria al enlazar sin decir por que.
+# And that mbedTLS really does bring DTLS-SRTP. Without it, libpeer's
+# dtls_srtp.c is left without the two functions the SRTP keys come out of, and
+# the error would only show up at link time without saying why.
 if [ -x "$NM" ] && [ -f "$MBED/lib/libmbedtls.a" ]; then
 	if ! "$NM" --defined-only "$MBED/lib/libmbedtls.a" 2>/dev/null \
 	     | grep -q "mbedtls_ssl_get_dtls_srtp_negotiation_result"; then
-		echo "!! la libmbedtls.a que hay NO trae DTLS-SRTP."
-		echo "   Vuelve a correr deps/build-mbedtls.sh; ahora lo comprueba solo."
+		echo "!! the libmbedtls.a that's there does NOT have DTLS-SRTP."
+		echo "   Run deps/build-mbedtls.sh again; it now checks for that itself."
 		exit 1
 	fi
 fi
 
-# --- las cabeceras de PSL1GHT ------------------------------------------
+# --- the PSL1GHT headers -----------------------------------------------
 
 PSL_INC=""
 PSL_LIB=""
@@ -90,29 +90,29 @@ for d in "$PS3DEV/ppu" "$PSL1GHT/ppu" "$PS3DEV/portlibs/ppu"; do
 	if [ -f "$d/include/netinet/in.h" ]; then
 		PSL_INC="-I$d/include"
 		PSL_LIB="-L$d/lib"
-		echo ">> cabeceras de PSL1GHT en $d/include"
+		echo ">> PSL1GHT headers in $d/include"
 		break
 	fi
 done
 
 if [ -z "$PSL_INC" ]; then
-	echo "no encuentro netinet/in.h en ninguna ruta de PSL1GHT"
+	echo "can't find netinet/in.h in any PSL1GHT path"
 	exit 1
 fi
 
 PROBE="$WORK/.probe-libpeer"
 mkdir -p "$PROBE"
 
-# --- LA SONDA ----------------------------------------------------------
+# --- THE PROBE ---------------------------------------------------------
 #
-# ENLAZA, no solo compila. Es la leccion de la vuelta de CMSG: en C99,
-# llamar a algo que no esta declarado es un AVISO, asi que "compila" no
-# quiere decir "existe". Y una cosa por prueba: la primera version de la
-# sonda de sockets metia select y FD_ISSET en el mismo programa, fallo, y no
-# se pudo saber cual de los dos faltaba.
+# IT LINKS, it doesn't just compile. That's the lesson from the CMSG round: in
+# C99, calling something that isn't declared is a WARNING, so "it compiles"
+# doesn't mean "it exists". And one thing per test: the first version of the
+# socket probe put select and FD_ISSET in the same program, it failed, and
+# there was no way to tell which of the two was missing.
 
 echo
-echo ">> mirando que trae la consola"
+echo ">> checking what the console has"
 
 LIBS_SONDA="-lnet -lnetctl -lsysmodule -lrt -llv2 -lm"
 OPTS_SONDA="-std=gnu99 $PSL_INC -Werror=implicit-function-declaration -Werror=implicit-int"
@@ -122,7 +122,7 @@ enlaza() {
 	# shellcheck disable=SC2086
 	if $CC "$PROBE/p.c" -o "$PROBE/p.elf" $OPTS_SONDA $PSL_LIB $LIBS_SONDA \
 	   > "$PROBE/p.err" 2>&1; then
-		echo "   SI   $1"
+		echo "   YES  $1"
 		return 0
 	else
 		echo "   no   $1"
@@ -130,14 +130,14 @@ enlaza() {
 	fi
 }
 
-# select SE MIRA, PERO YA NO SE USA. Y merece una linea de aviso, porque
-# este "SI" es exactamente el que despisto durante dos rondas: select
-# EXISTE en PSL1GHT y enlaza sin rechistar. Lo que no se puede es
-# llamarla, porque los descriptores de la PS3 valen 0x40000026 y FD_SET
-# los convierte en una escritura 64 MB fuera de la pila.
+# select IS PROBED, BUT IT ISN'T USED ANY MORE. And it deserves a warning
+# line, because this "YES" is exactly the one that threw us off for two
+# rounds: select EXISTS in PSL1GHT and links without complaining. What you
+# can't do is call it, because PS3 descriptors are worth 0x40000026 and FD_SET
+# turns them into a write 64 MB off the end of the stack.
 #
-# La sonda se queda porque el dia que PSL1GHT lo arregle querremos verlo,
-# pero el parche manda los tres sitios de libpeer por netPoll.
+# The probe stays because the day PSL1GHT fixes it we'll want to see that,
+# but the patch sends all three libpeer sites through netPoll.
 SELECT_DEF=""
 if ! enlaza "select()" '#include <sys/types.h>
 #include <sys/socket.h>
@@ -147,10 +147,10 @@ int main(void){fd_set r; struct timeval tv;
 FD_ZERO(&r); tv.tv_sec=0; tv.tv_usec=1000;
 return select(1,&r,0,0,&tv);}'; then
 	SELECT_DEF="-DGR33N_FALTA_SELECT=1"
-	echo "        -> lo pone ps3_net_stubs.c sobre netSelect()"
+	echo "        -> ps3_net_stubs.c supplies it on top of netSelect()"
 else
-	echo "        (existe, pero da igual: en la PS3 no se puede llamar."
-	echo "         libpeer va por netPoll. Ver agent.c en el parche.)"
+	echo "        (it exists, but it makes no odds: on the PS3 you can't"
+	echo "         call it. libpeer goes by netPoll. See agent.c in the patch.)"
 fi
 
 ISSET_DEF=""
@@ -159,13 +159,13 @@ if ! enlaza "FD_ISSET" '#include <sys/types.h>
 #include <sys/select.h>
 int main(void){fd_set r; FD_ZERO(&r); return FD_ISSET(0,&r) ? 1 : 0;}'; then
 	ISSET_DEF="-DGR33N_FALTA_FD_ISSET=1"
-	echo "        !! FD_ISSET NO ESTA, y libpeer lo usa en agent.c:101."
-	echo "           Eso no esta resuelto todavia: pega esta salida."
+	echo "        !! FD_ISSET IS NOT THERE, and libpeer uses it in agent.c:101."
+	echo "           That one isn't solved yet: paste this output."
 	exit 1
 fi
 
-# El orden de bytes, que es de lo que depende que se lea un solo paquete RTP.
-if ! enlaza "<endian.h> con __BYTE_ORDER" "#include <endian.h>
+# Byte order, which is what reading a single RTP packet properly depends on.
+if ! enlaza "<endian.h> with __BYTE_ORDER" "#include <endian.h>
 #if !defined(__BYTE_ORDER) || !defined(__BIG_ENDIAN)
 #error faltan
 #endif
@@ -173,23 +173,23 @@ if ! enlaza "<endian.h> con __BYTE_ORDER" "#include <endian.h>
 #error no es big-endian
 #endif
 int main(void){return 0;}"; then
-	echo "        -> lo pone ps3-shim/endian.h (asi que va -I\$SHIM delante)"
+	echo "        -> ps3-shim/endian.h supplies it (so -I\$SHIM goes first)"
 fi
 
-# --- LA FAMILIA net* ---------------------------------------------------
+# --- THE net* FAMILY ---------------------------------------------------
 #
-# El parche pasa TODO socket.c a netSocket/netBind/netSendTo/... porque
-# PSL1GHT tiene dos familias de red que no comparten descriptores:
-# socket() devuelve 0x4000002D y netPoll contesta POLLNVAL; netSocket()
-# devuelve 46 y netPoll espera lo que le pidas. Medido el 2026-09-03.
+# The patch moves ALL of socket.c over to netSocket/netBind/netSendTo/...
+# because PSL1GHT has two networking families that don't share descriptors:
+# socket() returns 0x4000002D and netPoll answers POLLNVAL; netSocket()
+# returns 46 and netPoll waits for whatever you ask it to. Measured 2026-09-03.
 #
-# De las diez, GR33N ya usaba nueve en link.c y net_tls.c. La decima,
-# netGetSockName, no la habia usado nadie -- y una funcion de red que no
-# existe se nota tarde y mal: sin declaracion es un aviso, no un error, y
-# el enlazado en C no comprueba firmas. Asi que se preguntan todas aqui,
-# de una en una, y el que falle sale con nombre.
+# Of the ten, GR33N was already using nine in link.c and net_tls.c. The tenth,
+# netGetSockName, nobody had used -- and a networking function that doesn't
+# exist shows up late and badly: with no declaration it's a warning, not an
+# error, and linking in C doesn't check signatures. So all of them get asked
+# about here, one at a time, and whichever fails comes out by name.
 echo
-echo ">> la familia net*, que es por donde va ahora socket.c"
+echo ">> the net* family, which is the way socket.c goes now"
 
 FALTAN_NET=""
 for fn in netSocket netBind netConnect netClose netSend netRecv \
@@ -221,28 +221,28 @@ done
 
 if [ -n "$FALTAN_NET" ]; then
 	echo
-	echo "!! FALTAN de la familia net*:$FALTAN_NET"
-	echo "   socket.c del parche las usa. Si el error de arriba es de"
-	echo "   firma y no de simbolo que falta, pegamelo y ajusto la"
-	echo "   llamada; si de verdad no existe, hay que rodearla."
+	echo "!! MISSING from the net* family:$FALTAN_NET"
+	echo "   The socket.c in the patch uses them. If the error above is"
+	echo "   about a signature and not a missing symbol, paste it to me and"
+	echo "   I'll adjust the call; if it really isn't there, we work around it."
 	exit 1
 fi
 
-# --- fuentes -----------------------------------------------------------
+# --- sources -----------------------------------------------------------
 
 if [ ! -d "$SRC" ]; then
 	echo
-	echo ">> clonando libpeer"
+	echo ">> cloning libpeer"
 	git clone --quiet https://github.com/sepfy/libpeer "$SRC"
 else
-	echo ">> usando $SRC (ya clonado)"
+	echo ">> using $SRC (already cloned)"
 fi
 
 cd "$SRC"
 
-# Al commit clavado, y limpio. Igual que en usrsctp: nadie edita esto a
-# mano, asi que devolverlo a como vino no pierde nada, y sin esto un parche
-# nuevo no aplica nunca sobre el de la vuelta anterior.
+# To the pinned commit, and clean. Same as in usrsctp: nobody edits this by
+# hand, so putting it back the way it came loses nothing, and without this a
+# new patch never applies over the one from the previous round.
 git checkout --quiet "$LIBPEER_REF" 2>/dev/null || {
 	git fetch --quiet origin "$LIBPEER_REF" && git checkout --quiet "$LIBPEER_REF"
 }
@@ -251,118 +251,118 @@ git clean -qfd 2>/dev/null || true
 
 if git apply --check "$HERE/libpeer-ps3.patch" 2>/dev/null; then
 	git apply "$HERE/libpeer-ps3.patch"
-	echo ">> parche de PS3 aplicado"
+	echo ">> PS3 patch applied"
 else
-	echo "!! el parche no aplica. Pega esto:"
+	echo "!! the patch doesn't apply. Paste this:"
 	git apply --verbose "$HERE/libpeer-ps3.patch" 2>&1 | head -20
 	exit 1
 fi
 
 cd - > /dev/null
 
-# --- compilacion --------------------------------------------------------
+# --- compilation --------------------------------------------------------
 
 CFLAGS="-O2 -Wall -std=gnu99 -mcpu=cell"
 
-# El shim PRIMERO: de ahi sale <endian.h>, que es de donde libpeer saca
-# __BYTE_ORDER para elegir la disposicion de RtpHeader y RtcpHeader. Si eso
-# se resolviera mal, no habria error: habria paquetes RTP mal leidos.
+# The shim FIRST: that's where <endian.h> comes from, and that's where libpeer
+# gets __BYTE_ORDER to pick the layout of RtpHeader and RtcpHeader. If that
+# resolved wrongly there would be no error: there would be misread RTP packets.
 CFLAGS="$CFLAGS -I$SHIM"
 
 CFLAGS="$CFLAGS -I$SRC/src"
 CFLAGS="$CFLAGS -I$MBED/include -I$SRTP/include -I$SCTP/include"
 
-# LA MISMA CONFIGURACION DE mbedTLS CON LA QUE SE COMPILO mbedTLS.
+# THE SAME mbedTLS CONFIGURATION mbedTLS ITSELF WAS COMPILED WITH.
 #
-# Esto faltaba y se noto en el acto: dtls_srtp.c no encontraba
+# This was missing and it showed straight away: dtls_srtp.c couldn't find
 # mbedtls_ssl_srtp_profile, MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80,
-# mbedtls_ssl_conf_dtls_srtp_protection_profiles ni
-# mbedtls_ssl_get_dtls_srtp_negotiation_result -- diez errores-- justo
-# despues de que build-mbedtls.sh confirmara que DTLS-SRTP SI estaba en la
-# biblioteca.
+# mbedtls_ssl_conf_dtls_srtp_protection_profiles or
+# mbedtls_ssl_get_dtls_srtp_negotiation_result -- ten errors -- right
+# after build-mbedtls.sh had confirmed that DTLS-SRTP WAS there in the
+# library.
 #
-# Las dos cosas eran ciertas a la vez, y ahi esta el asunto: la biblioteca
-# tenia DTLS-SRTP porque se construyo con ps3_mbedtls_config.h, y libpeer no
-# lo veia porque se compilaba SIN el, leyendo las cabeceras de mbedTLS en su
-# estado por defecto, donde MBEDTLS_SSL_DTLS_SRTP viene comentado.
+# Both things were true at once, and that's the whole of it: the library had
+# DTLS-SRTP because it was built with ps3_mbedtls_config.h, and libpeer didn't
+# see it because it was compiled WITHOUT it, reading the mbedTLS headers in
+# their default state, where MBEDTLS_SSL_DTLS_SRTP comes commented out.
 #
-# Y NO ES SOLO CUESTION DE FUNCIONES QUE FALTAN. La configuracion de mbedTLS
-# tambien guarda CAMPOS DE ESTRUCTURA tras #if. libpeer lleva un
-# mbedtls_ssl_context entero dentro de DtlsSrtp: compilarlo contra una
-# configuracion y enlazarlo contra otra da estructuras de tamaños distintos
-# a cada lado del enlace, que es corrupcion de memoria sin un solo aviso.
-# Aqui el fallo fue ruidoso por suerte; la version muda de este mismo error
-# es la que da miedo.
+# AND IT ISN'T ONLY A MATTER OF MISSING FUNCTIONS. The mbedTLS configuration
+# also keeps STRUCT FIELDS behind #if. libpeer carries a whole
+# mbedtls_ssl_context inside DtlsSrtp: compiling it against one configuration
+# and linking it against another gives structs of different sizes on either
+# side of the link, which is memory corruption without a single warning.
+# Here the failure was loud, luckily; the silent version of this same mistake
+# is the one that's frightening.
 #
-# REGLA: todo lo que compile contra estas cabeceras lleva este -D. El
-# Makefile de GR33N ya lo hace (linea 72); build-libsrtp.sh no lo hacia y
-# tambien se le ha puesto.
+# RULE: everything that compiles against these headers carries this -D. The
+# GR33N Makefile already does it (line 72); build-libsrtp.sh didn't and it
+# has been given it too.
 CFLAGS="$CFLAGS -DMBEDTLS_USER_CONFIG_FILE=\"ps3_mbedtls_config.h\""
 
 CFLAGS="$CFLAGS $PSL_INC"
 
 CFLAGS="$CFLAGS -DGR33N_PS3=1 $SELECT_DEF $ISSET_DEF"
 
-# Sin señalizacion: fuera coreHTTP, coreMQTT y cJSON.
+# No signalling: out go coreHTTP, coreMQTT and cJSON.
 #
-# Eso es para el modo en el que libpeer se conecta a un broker MQTT y
-# negocia el SDP por su cuenta. Nosotros ya tenemos la sesion montada
-# -session.c habla con el API v5 de xCloud- y le damos la oferta y la
-# respuesta a mano. peer_signaling.c y ssl_transport.c estan enteros dentro
-# de un #ifndef, asi que se compilan a nada.
+# That's for the mode where libpeer connects to an MQTT broker and negotiates
+# the SDP on its own. We already have the session set up -session.c talks to
+# the xCloud v5 API- and we hand it the offer and the answer ourselves.
+# peer_signaling.c and ssl_transport.c sit entirely inside an #ifndef, so they
+# compile to nothing.
 CFLAGS="$CFLAGS -DDISABLE_PEER_SIGNALING=1"
 
-# Los canales de datos van por usrsctp y no por el SCTP propio de libpeer.
-# Ver claude/webrtc-portado.md: el suyo no retransmite, y el input de xCloud
-# deja de aplicarse en cuanto el servidor ve un hueco en la numeracion.
+# The data channels go through usrsctp and not through libpeer's own SCTP.
+# See claude/webrtc-portado.md: theirs doesn't retransmit, and xCloud input
+# stops being applied the moment the server sees a gap in the numbering.
 CFLAGS="$CFLAGS -DCONFIG_USE_USRSCTP=1"
 
-# Los logs de libpeer, a peer_log(), que GR33N manda al servidor de
-# depuracion. Arrancando desde el XMB no hay TTY: lo que no llega al PC no
-# existe.
+# libpeer's logs go to peer_log(), which GR33N sends on to the debug server.
+# Launching from the XMB there is no TTY: what doesn't reach the PC doesn't
+# exist.
 #
-# Y NIVEL 2 (INFO), NO DEBUG. En DEBUG libpeer escribe una linea POR PAQUETE
-# RTP. A 60 fps eso son cientos por segundo por un socket UDP: ahoga el log y
-# atasca el hilo. Es el aviso de green-nx, que se lo comio.
+# AND LEVEL 2 (INFO), NOT DEBUG. On DEBUG libpeer writes one line PER RTP
+# PACKET. At 60 fps that's hundreds a second down a UDP socket: it drowns the
+# log and jams the thread. It's green-nx's warning, and they walked into it.
 CFLAGS="$CFLAGS -DLOG_REDIRECT=1 -DLOG_LEVEL=2"
 
-# Por lo mismo que en libSRTP y usrsctp: se leen palabras de 32 bits desde
-# buffers de char por todas partes.
+# For the same reason as in libSRTP and usrsctp: 32-bit words get read out of
+# char buffers all over the place.
 CFLAGS="$CFLAGS -fno-strict-aliasing"
 
-# LA OPCION QUE YA SE COBRO DOS FALLOS EN usrsctp.
+# THE FLAG THAT HAS ALREADY CLAIMED TWO BUGS IN usrsctp.
 #
-# Sin esto, una macro o una funcion que no existe se convierte en una
-# llamada implicita, que en C99 es un aviso. Y cuando lo que falta devolvia
-# un PUNTERO, en un binario de 32 bits el int que el compilador se inventa
-# mide lo mismo: compila, enlaza, arranca, y escribe en una direccion
-# truncada dentro de la consola.
+# Without this, a macro or a function that doesn't exist turns into an
+# implicit call, which in C99 is a warning. And when the missing thing
+# returned a POINTER, in a 32-bit binary the int the compiler invents is
+# exactly the same size: it compiles, it links, it starts, and it writes to a
+# truncated address inside the console.
 CFLAGS="$CFLAGS -Werror=implicit-function-declaration -Werror=implicit-int"
 
 CFLAGS="$CFLAGS -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function"
 
-# --- Y QUE LA CONFIGURACION LLEGUE DE VERDAD ---------------------------
+# --- AND THAT THE CONFIGURATION REALLY ARRIVES -------------------------
 #
-# Con las opciones ya montadas, se comprueba en el sitio exacto donde
-# importa. Que libmbedtls.a tenga DTLS-SRTP y que libpeer LO VEA son dos
-# cosas distintas, y esta ronda salieron distintas.
+# With the flags already assembled, it gets checked at the exact spot where
+# it matters. libmbedtls.a having DTLS-SRTP and libpeer SEEING IT are two
+# different things, and this round they came out different.
 #
-# Diez errores de "unknown type name" que no mencionan la configuracion por
-# ningun lado se convierten aqui en una linea que dice lo que pasa.
+# Ten "unknown type name" errors that don't mention the configuration
+# anywhere turn into one line here that says what is going on.
 printf '#include <mbedtls/ssl.h>\n#if !defined(MBEDTLS_SSL_DTLS_SRTP)\n#error no llega\n#endif\nint main(void){return 0;}\n' > "$PROBE/c.c"
 # shellcheck disable=SC2086
 if $CC -c "$PROBE/c.c" -o "$PROBE/c.o" $CFLAGS > /dev/null 2>&1; then
-	echo ">> la configuracion de mbedTLS llega a libpeer (DTLS-SRTP visible)"
+	echo ">> the mbedTLS configuration reaches libpeer (DTLS-SRTP visible)"
 else
-	echo "!! LAS CABECERAS DE mbedTLS NO TRAEN DTLS-SRTP."
+	echo "!! THE mbedTLS HEADERS DO NOT BRING DTLS-SRTP."
 	echo
-	echo "   La biblioteca puede tenerlo y aun asi pasar esto: si el"
-	echo "   -DMBEDTLS_USER_CONFIG_FILE no llega, las cabeceras se leen en"
-	echo "   su estado por defecto, donde MBEDTLS_SSL_DTLS_SRTP viene"
-	echo "   comentado."
+	echo "   The library can have it and this still happen: if the"
+	echo "   -DMBEDTLS_USER_CONFIG_FILE doesn't arrive, the headers get read"
+	echo "   in their default state, where MBEDTLS_SSL_DTLS_SRTP comes"
+	echo "   commented out."
 	echo
-	echo "   Mira que exista $MBED/include/ps3_mbedtls_config.h"
-	echo "   (lo copia build-mbedtls.sh al instalar)."
+	echo "   Check that $MBED/include/ps3_mbedtls_config.h is there"
+	echo "   (build-mbedtls.sh copies it in when it installs)."
 	exit 1
 fi
 
@@ -390,23 +390,23 @@ src/utils.c
 
 OBJ="$WORK/.obj-libpeer"
 
-# SE MONTA A UN LADO Y SE CAMBIA AL FINAL.
+# IT GETS BUILT OFF TO ONE SIDE AND SWAPPED IN AT THE END.
 #
-# Antes esto hacia rm -rf "$OUT" aqui arriba, y una compilacion fallida
-# dejaba a GR33N sin peer.h: el make siguiente moria con "peer.h: No such
-# file or directory", que no tiene NADA que ver con el fallo de verdad y
-# manda a buscar donde no es. Pasó tal cual el 2026-09-01 con utils.c.
+# This used to do rm -rf "$OUT" up here, and a failed build left GR33N with
+# no peer.h: the next make died with "peer.h: No such file or directory",
+# which has NOTHING to do with the real failure and sends you looking in the
+# wrong place. It happened exactly like that on 2026-09-01 with utils.c.
 #
-# Una dependencia que falla no puede llevarse por delante la instalacion
-# que ya funcionaba. Se compila en un directorio aparte y solo se pone en
-# su sitio cuando ha salido todo bien, comprobaciones incluidas.
+# A dependency that fails cannot be allowed to take out the installation that
+# was already working. It's built in a directory of its own and only put in
+# place once everything has gone well, checks included.
 FINAL="$OUT"
 OUT="$WORK/.libpeer-ps3-en-obras"
 rm -rf "$OBJ" "$OUT"
 mkdir -p "$OBJ" "$OUT/lib" "$OUT/include"
 
 echo
-echo ">> compilando con $(basename "$CC")"
+echo ">> compiling with $(basename "$CC")"
 
 n=0
 fail=0
@@ -419,7 +419,7 @@ for f in $FILES; do
 	esac
 
 	if [ ! -f "$ruta" ]; then
-		echo "   NO EXISTE $ruta"
+		echo "   DOES NOT EXIST $ruta"
 		fail=$((fail + 1))
 		continue
 	fi
@@ -429,17 +429,17 @@ for f in $FILES; do
 		n=$((n + 1))
 	else
 		fail=$((fail + 1))
-		echo "   FALLA $f"
+		echo "   FAILS $f"
 		grep -E "error:" "$OBJ/$b.err" | sed 's/^/     /'
 	fi
 done
 
-echo ">> $n compilados, $fail fallidos"
+echo ">> $n compiled, $fail failed"
 
 if [ "$fail" -ne 0 ]; then
 	echo
-	echo "   Los ficheros de error completos estan en $OBJ/*.err"
-	echo "   Pega esta salida y seguimos."
+	echo "   The full error files are in $OBJ/*.err"
+	echo "   Paste this output and we carry on."
 	exit 1
 fi
 
@@ -447,7 +447,7 @@ fi
 cp "$SRC/src/peer.h" "$SRC/src/peer_connection.h" "$OUT/include/"
 [ -f "$SRC/src/peer_signaling.h" ] && cp "$SRC/src/peer_signaling.h" "$OUT/include/"
 
-# --- que queda sin resolver ---------------------------------------------
+# --- what is left unresolved --------------------------------------------
 
 if [ -x "$NM" ]; then
 	"$NM" --undefined-only "$OUT/lib/libpeer.a" 2>/dev/null \
@@ -458,66 +458,66 @@ if [ -x "$NM" ]; then
 	comm -23 "$WORK/.undef" "$WORK/.def" > "$WORK/.falta"
 
 	echo
-	echo ">> simbolos sin resolver:"
+	echo ">> unresolved symbols:"
 	sed 's/^/   /' "$WORK/.falta"
 
 	echo
-	echo "   Esperado, y todo se resuelve al enlazar el EBOOT:"
+	echo "   Expected, and it all resolves when the EBOOT is linked:"
 	echo
-	echo "     libc de newlib       memcpy, malloc, printf, usleep..."
-	echo "     la red de la consola socket, bind, connect, select,"
+	echo "     newlib libc          memcpy, malloc, printf, usleep..."
+	echo "     the console network  socket, bind, connect, select,"
 	echo "                          sendto, inet_pton, netGetHostByName"
 	echo "     mbedtls_*            libmbedtls.a"
 	echo "     srtp_*               libsrtp2.a"
 	echo "     usrsctp_*            libusrsctp.a"
-	echo "     getifaddrs y cia.    ps3_stubs.c, dentro de libusrsctp.a"
-	echo "     mbedtls_timing_*     source/dtls_timer.c de GR33N"
+	echo "     getifaddrs and co.   ps3_stubs.c, inside libusrsctp.a"
+	echo "     mbedtls_timing_*     source/dtls_timer.c from GR33N"
 	echo
-	echo "   Y UNO que todavia no existe y hay que escribir:"
+	echo "   AND ONE that doesn't exist yet and has to be written:"
 	echo
-	echo "     peer_log   los logs de libpeer al log remoto. Con"
-	echo "                LOG_REDIRECT=1, libpeer manda ahi todo lo que"
-	echo "                diria por stdout, y desde el XMB no hay TTY:"
-	echo "                lo que no llega al PC no existe. La firma esta"
-	echo "                en src/utils.h:24."
+	echo "     peer_log   libpeer's logs to the remote log. With"
+	echo "                LOG_REDIRECT=1, libpeer sends there everything"
+	echo "                it would say on stdout, and from the XMB there"
+	echo "                is no TTY: what doesn't reach the PC doesn't"
+	echo "                exist. The signature is in src/utils.h:24."
 
-	# getaddrinfo NO puede aparecer: si sale, el parche de
-	# ports_resolve_addr no ha entrado y el EBOOT no va a enlazar.
+	# getaddrinfo must NOT show up: if it does, the ports_resolve_addr
+	# part of the patch hasn't gone in and the EBOOT won't link.
 	if grep -qx "getaddrinfo" "$WORK/.falta"; then
 		echo
-		echo "!! SALE getaddrinfo, y PSL1GHT no lo tiene."
-		echo "   El parche reescribe ports_resolve_addr() sobre"
-		echo "   netGetHostByName; si el simbolo sigue ahi, esa parte del"
-		echo "   parche no se ha aplicado."
+		echo "!! getaddrinfo SHOWS UP, and PSL1GHT doesn't have it."
+		echo "   The patch rewrites ports_resolve_addr() on top of"
+		echo "   netGetHostByName; if the symbol is still there, that part"
+		echo "   of the patch hasn't been applied."
 		rm -f "$WORK/.undef" "$WORK/.def" "$WORK/.falta"
 		exit 1
 	fi
 
-	# select NO PUEDE APARECER. Y esta comprobacion ha cambiado de
-	# sentido dos veces, asi que conviene contar por que.
+	# select MUST NOT SHOW UP. And this check has changed meaning twice,
+	# so it's worth setting down why.
 	#
-	# La primera version se quejaba en cuanto veia select sin resolver.
-	# Estaba mal: si la consola lo trae, select sale sin resolver igual
-	# que socket o sendto y se arregla al enlazar el EBOOT. La segunda
-	# version solo miraba si la sonda habia dicho que faltaba.
+	# The first version complained as soon as it saw select unresolved.
+	# That was wrong: if the console has it, select comes out unresolved
+	# like socket or sendto and is fixed when the EBOOT is linked. The
+	# second version only checked if the probe had said it was missing.
 	#
-	# Ahora la respuesta buena es OTRA: select no debe salir NUNCA,
-	# resuelto o sin resolver, porque en la PS3 no se puede llamar. Un
-	# descriptor de aqui vale 0x40000026 y FD_SET(0x40000026, ...) indexa
-	# el elemento 16.777.216 de un array de 16 -- una escritura 64 MB
-	# mas alla de la pila, y la consola se para en seco. Medido el
-	# 2026-09-01 con WEBRTC_DEBUG.
+	# The right answer now is a DIFFERENT one: select must NEVER come
+	# out, resolved or unresolved, because on the PS3 it can't be called.
+	# A descriptor here is worth 0x40000026 and FD_SET(0x40000026, ...)
+	# indexes element 16,777,216 of an array of 16 -- a write 64 MB
+	# past the end of the stack, and the console stops dead. Measured
+	# 2026-09-01 with WEBRTC_DEBUG.
 	#
-	# El parche cambia los tres sitios (agent.c, mdns.c,
-	# ssl_transport.c) por netPoll, que mete el descriptor en un int y no
-	# tiene tope. Asi que si select asoma aqui, es que alguno de los tres
-	# no se ha parcheado -- o que libpeer ha crecido un cuarto.
+	# The patch swaps the three sites (agent.c, mdns.c,
+	# ssl_transport.c) for netPoll, which puts the descriptor in an int
+	# and has no ceiling. So if select pokes out here, one of the three
+	# hasn't been patched -- or libpeer has grown a fourth.
 	if grep -qx "select" "$WORK/.falta" || grep -qx "select" "$WORK/.def"; then
 		echo
-		echo "!! SALE select, Y EN LA PS3 ESO CUELGA LA CONSOLA."
-		echo "   Los sitios conocidos son agent.c, mdns.c y"
-		echo "   ssl_transport.c, y el parche los cambia por netPoll."
-		echo "   Si sale de todas formas, busca quien lo llama con:"
+		echo "!! select SHOWS UP, AND ON THE PS3 THAT HANGS THE CONSOLE."
+		echo "   The known sites are agent.c, mdns.c and"
+		echo "   ssl_transport.c, and the patch swaps them for netPoll."
+		echo "   If it shows up anyway, find who calls it with:"
 		echo "     ppu-nm -A $OUT/lib/libpeer.a | grep ' U select'"
 		rm -f "$WORK/.undef" "$WORK/.def" "$WORK/.falta"
 		exit 1
@@ -528,13 +528,13 @@ fi
 
 rm -rf "$OBJ"
 
-# Todo ha salido bien: ahora si se cambia la instalacion buena.
+# Everything has gone well: now the good installation does get swapped.
 rm -rf "$FINAL"
 mv "$OUT" "$FINAL"
 OUT="$FINAL"
 
 echo
-echo ">> listo: $OUT/lib/libpeer.a  ($(du -h "$OUT/lib/libpeer.a" | cut -f1))"
+echo ">> done: $OUT/lib/libpeer.a  ($(du -h "$OUT/lib/libpeer.a" | cut -f1))"
 echo
-echo "   Las cuatro bibliotecas estan. Lo siguiente es cablearlas al"
-echo "   Makefile de GR33N y escribir la capa que las usa."
+echo "   The four libraries are there. Next is wiring them into the GR33N"
+echo "   Makefile and writing the layer that uses them."

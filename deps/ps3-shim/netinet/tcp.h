@@ -8,7 +8,7 @@
  *
  * Vacia a proposito. Existe solo para que el #include no falle
  *
- * Ver deps/ps3-shim/LEEME.md.
+ * Ver deps/ps3-shim/README.md.
  */
 
 #ifndef GR33N_NETINET_TCP_H

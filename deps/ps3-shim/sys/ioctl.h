@@ -12,7 +12,7 @@
  * que es justo el aviso que queremos -- mejor eso que un stub silencioso
  * devolviendo exito con un MTU inventado
  *
- * Ver deps/ps3-shim/LEEME.md.
+ * Ver deps/ps3-shim/README.md.
  */
 
 #ifndef GR33N_SYS_IOCTL_H

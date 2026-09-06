@@ -1,8 +1,8 @@
 # =====================================================================
-#  GR33N - lo que NO entra en el repositorio
+#  GR33N - what does NOT go into the repository
 # =====================================================================
 
-# --- lo que produce la compilacion -----------------------------------
+# --- build output ----------------------------------------------------
 build/
 *.elf
 *.self
@@ -10,65 +10,70 @@ build/
 *.map
 *.o
 
-# xmb/ lo genera 'sh deps/install-xmb.sh' a partir de pkgfiles/ y
-# sfo.xml. Lo que hay dentro es una copia; los originales estan en el
-# repositorio y de ahi sale igual en cualquier maquina.
+# xmb/ is produced by 'sh deps/install-xmb.sh' from pkgfiles/ and sfo.xml.
+# What's inside is a copy; the originals are in the repository and it comes
+# out the same on any machine.
 #
-# (pkgfiles/ SI va al repositorio: los PNG estan hechos a mano y no los
-# genera nada. Que las dos carpetas se parezcan no las hace iguales.)
+# (pkgfiles/ DOES go in the repository: the PNGs are hand-made and nothing
+# generates them. Two directories looking alike doesn't make them the same.)
 xmb/
 
-# --- LA CARPETA PRIVADA. ESTA LINEA NO SE TOCA. ----------------------
+# --- the PC tests ----------------------------------------------------
 #
-# privado/ es todo lo que se uso para llegar hasta aqui y no hace falta
-# para compilar ni para usar GR33N: las sondas, notas de trabajo, copias
-# de seguridad de ficheros antes de tocarlos, el servidor de pruebas del
-# bucle de la v0.3.0.
+# They're not needed to build GR33N and never were: they test the
+# arithmetic on a PC, under ASan and UBSan, and they were the working tools
+# while this was being written.
+t/
+
+# --- THE PRIVATE FOLDER. THIS LINE DOESN'T GET TOUCHED. --------------
 #
-# Y, sobre todo, privado/token.dat y privado/config.cfg.
+# privado/ is everything used to get here that isn't needed to build or run
+# GR33N: the platform probes, working notes, backups of files taken before
+# changing them, the test server from the v0.3.0 loop.
+#
+# And, above all, privado/token.dat and privado/config.cfg.
 privado/
 
-# --- LOS SECRETOS DE VERDAD ------------------------------------------
+# --- THE ACTUAL SECRETS ----------------------------------------------
 #
-# token.dat es el token de traspaso de la cuenta de Microsoft, EN CLARO.
-# Empieza por "M.C517_BAY.0.U.MsaArtifacts." y con eso solo, cualquiera
-# entra en la cuenta de Xbox de quien compilo. Vive en privado/, pero se
-# nombra tambien aqui por si algun dia vuelve a la raiz: una sola linea
-# de mas cuesta nada, y la que falta cuesta una cuenta.
+# token.dat is the Microsoft account transfer token, IN THE CLEAR. It
+# starts with "M.C517_BAY.0.U.MsaArtifacts." and with that alone anyone
+# gets into the Xbox account of whoever built this. It lives in privado/,
+# but it's named here too in case it ever comes back to the root: one extra
+# line costs nothing, and the missing one costs an account.
 token.dat
 *.token
 
-# config.cfg lleva la region elegida, el idioma y la zona muerta de SU
-# mando. No hace dano, pero tampoco pinta nada en el repositorio: al
-# siguiente que clone le llegarian los gustos de otro.
+# config.cfg holds the chosen region, the language and the dead zone of
+# SOMEONE'S pad. It does no harm, but it has no business in the repository
+# either: the next person to clone would get someone else's preferences.
 config.cfg
 
-# --- LOS LOGS. ESTA LINEA TAMPOCO SE TOCA. ---------------------------
+# --- THE LOGS. THIS ONE DOESN'T GET TOUCHED EITHER. ------------------
 #
-# Los anteriores a la 0.28.2 llevan el token de Microsoft y las claves
-# SRTP de sesion SIN TAPAR: se registraban enteros antes de que existiera
-# linkRedact(). Con uno solo basta.
+# Anything from before 0.28.2 carries the Microsoft token and the SRTP
+# session keys IN THE CLEAR: they were logged whole before linkRedact()
+# existed. One is enough.
 #
-# Comprobado: gr33n-20260824-124012.log contenia una clave SRTP en claro.
-# No es teorico.
+# Verified: gr33n-20260824-124012.log contained an SRTP key in the clear.
+# This isn't theoretical.
 #
-# Antes del primer push, MIRAR 'git status' y confirmar que aqui no
-# aparece ni un .log. Fiarse de esta linea no basta: un fichero que git
-# ya sigue no lo desprotege un .gitignore anadido despues.
+# Before any push, LOOK at 'git status' and confirm not one .log shows up.
+# Trusting this line is not enough: a file git already tracks is not
+# unprotected by a .gitignore added afterwards.
 logs/
 *.log
 
-# --- copias antes de tocar algo --------------------------------------
+# --- backups taken before changing something -------------------------
 *.antes-de-*
 *.bak
 *.orig
 
-# --- restos de comandos mal escritos ---------------------------------
+# --- leftovers from mistyped commands --------------------------------
 #
-# Salieron de redirecciones con una frase en castellano detras:
-# "> mirando la 17 cabeceras compilando el ...". Cero bytes cada uno.
-# Estan en privado/basura/ esperando a que alguien los borre; se nombran
-# aqui para que si vuelven a aparecer no se cuelen.
+# These came from redirections with a Spanish sentence behind them:
+# "> mirando la 17 cabeceras compilando el ...". Zero bytes each. They're
+# named here so that if they ever reappear they don't slip through.
 17
 cabeceras
 compilando
@@ -77,10 +82,7 @@ la
 mirando
 tipos
 
-# --- lo que dejan las pruebas del PC ---------------------------------
-t/.bin/
-
-# --- lo que deja el editor -------------------------------------------
+# --- what the editor leaves behind -----------------------------------
 *.swp
 *~
 .DS_Store

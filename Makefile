@@ -36,8 +36,8 @@ TITLE		:=	GR33N
 APPID		:=	GR33N0PS3
 CONTENTID	:=	UP0001-$(APPID)_00-0000000000000000
 
-# Recursos de la entrada del XMB. Ver RECURSOS-XMB.txt (en la raiz) para
-# los nombres y los tamanos exactos.
+# XMB entry resources. See XMB-RESOURCES.md in the repo root for the
+# exact names and sizes.
 PKGFILES	:=	pkgfiles
 
 ifneq ($(wildcard $(CURDIR)/pkgfiles/ICON0.PNG),)

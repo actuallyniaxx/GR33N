@@ -1,38 +1,39 @@
 #!/bin/sh
 #
-# GR33N - construye libSRTP para PS3 (PSL1GHT / ppu-gcc)
+# GR33N - builds libSRTP for PS3 (PSL1GHT / ppu-gcc)
 #
 #   sh build-libsrtp.sh
 #
-# Deja $HOME/.gr33n-deps/libsrtp-ps3/ con:
-#   include/            cabeceras
+# Leaves $HOME/.gr33n-deps/libsrtp-ps3/ with:
+#   include/            headers
 #   lib/libsrtp2.a
 #
-# Misma forma que build-mbedtls.sh y por las mismas razones: todo dentro de
-# $HOME y nunca en /mnt/c (DrvFs no deja cambiar permisos y git revienta al
-# clonar), y compilacion a mano en vez de pelearse con cmake cruzado.
+# Same shape as build-mbedtls.sh and for the same reasons: everything inside
+# $HOME and never in /mnt/c (DrvFs will not let you change permissions and
+# git blows up when cloning), and compiling by hand instead of fighting a
+# cross-compiling cmake.
 #
-# DEPENDE DE mbedTLS. libSRTP puede traer su propio AES y su propio SHA1,
-# pero se le dice que use el de mbedTLS, que es el que lleva semanas
-# funcionando en esta consola. Meter una segunda implementacion de AES sin
-# probar, en la plataforma donde el orden de bytes ya nos ha mordido, no
-# tiene ningun sentido. Asi que build-mbedtls.sh primero.
+# DEPENDS ON mbedTLS. libSRTP can bring its own AES and its own SHA1, but we
+# tell it to use mbedTLS's, which is the one that has been working on this
+# console for weeks. Dropping in a second, untested AES implementation on
+# the platform where byte order has already bitten us makes no sense at all.
+# So build-mbedtls.sh first.
 #
-# LO QUE HAY QUE MIRAR AL FINAL es la lista de simbolos sin resolver. Si
-# ahi sale algo que no sea libc o psa_*, libSRTP espera algo del sistema
-# que la consola no tiene, y es mejor verlo ahora que entre cien errores de
-# enlace que no dicen nada.
+# WHAT TO LOOK AT WHEN IT FINISHES is the list of unresolved symbols. If
+# something shows up there that is not libc or psa_*, libSRTP expects
+# something from the system that the console does not have, and it is better
+# to see it now than among a hundred link errors that say nothing.
 #
-# ESTO YA SE HA PROBADO, aunque no con ppu-gcc: los 18 ficheros compilan
-# limpios para PowerPC64 big-endian con el cruzado de Debian, sin un solo
-# aviso ni con -Wcast-align. No es la misma libc ni el mismo sistema, asi
-# que aqui pueden salir cosas nuevas -- pero el orden de bytes, que era el
-# riesgo de verdad, es el mismo y esta comprobado.
+# THIS HAS ALREADY BEEN TESTED, though not with ppu-gcc: the 18 files compile
+# clean for PowerPC64 big-endian with the Debian cross-compiler, without a
+# single warning, not even with -Wcast-align. It is not the same libc nor the
+# same system, so new things can turn up here -- but the byte order, which
+# was the real risk, is the same and it is checked.
 #
-# Y en efecto salio una: el cruzado tiene <netinet/in.h> en la ruta por
-# defecto porque usa glibc, y ppu-gcc no. Ver el bloque de PSL_INC mas
-# abajo. Dos ficheros de dieciocho compilaron -- justo los dos que no
-# incluyen datatypes.h.
+# And sure enough one did turn up: the cross-compiler has <netinet/in.h> on
+# the default path because it uses glibc, and ppu-gcc does not. See the
+# PSL_INC block further down. Two files out of eighteen compiled -- exactly
+# the two that do not include datatypes.h.
 
 set -e
 
@@ -52,46 +53,47 @@ MBED="$WORK/mbedtls-ps3"
 mkdir -p "$WORK"
 
 if [ ! -x "$CC" ]; then
-	echo "no encuentro $CC"
-	echo "exporta PS3DEV o corrige la ruta"
+	echo "cannot find $CC"
+	echo "export PS3DEV or fix the path"
 	exit 1
 fi
 
 if [ ! -d "$MBED/include" ]; then
-	echo "falta mbedTLS en $MBED"
-	echo "corre primero:  sh build-mbedtls.sh"
+	echo "mbedTLS missing from $MBED"
+	echo "run this first:  sh build-mbedtls.sh"
 	exit 1
 fi
 
-# --- fuentes ----------------------------------------------------------
+# --- sources ----------------------------------------------------------
 
-# EL COMMIT CLAVADO, Y ESTO SE DESCUBRIO TARDE.
+# THE PINNED COMMIT, AND THIS WAS FOUND OUT LATE.
 #
-# Antes aqui habia `git clone --depth 1` a secas, o sea MASTER. Y master de
-# libSRTP es hoy la 3.0.0, que es otra API: srtp_crypto_policy_set_rtp_default
-# y srtp_crypto_policy_set_rtcp_default -- las dos que llama dtls_srtp.c de
-# libpeer para montar la politica de cifrado-- ya no existen ahi.
+# There used to be a bare `git clone --depth 1` here, i.e. MASTER. And master
+# of libSRTP is 3.0.0 today, which is a different API:
+# srtp_crypto_policy_set_rtp_default and srtp_crypto_policy_set_rtcp_default
+# -- the two that libpeer's dtls_srtp.c calls to set up the crypto policy--
+# no longer exist there.
 #
-# Lo peor es como se manifestaba: los 18 ficheros compilaban perfectamente y
-# la biblioteca quedaba hecha. La 3.0 compila igual de bien que la 2.x; solo
-# que no tiene esas funciones. El fallo habria salido al final del todo, al
-# enlazar libpeer, en forma de simbolos que no existen y ninguna pista de que
-# el problema era la VERSION.
+# The worst part is how it showed up: the 18 files compiled perfectly and the
+# library came out built. 3.0 compiles just as well as 2.x; it just does not
+# have those functions. The failure would have surfaced at the very end, when
+# linking libpeer, as symbols that do not exist and not a single hint that
+# the problem was the VERSION.
 #
-# 90d05bf es la 2.4.2, y no es una eleccion nuestra: es el submodulo que
-# libpeer clava en su propio arbol (third_party/libsrtp del commit 9319aa4).
-# O sea la version contra la que libpeer esta escrito y probado.
+# 90d05bf is 2.4.2, and it is not our choice: it is the submodule libpeer
+# pins in its own tree (third_party/libsrtp of commit 9319aa4). That is, the
+# version libpeer is written and tested against.
 #
-# Y no puede ir con --depth 1: eso solo trae la punta de la rama, y este
-# commit no lo es.
+# And it cannot go with --depth 1: that only brings the tip of the branch,
+# and this commit is not it.
 LIBSRTP_REF=90d05bf8980d16e4ac3f16c19b77e296c4bc207b
 
 if [ ! -d "$SRC" ]; then
-	echo ">> clonando libsrtp"
+	echo ">> cloning libsrtp"
 	git clone --quiet https://github.com/cisco/libsrtp.git "$SRC"
 fi
 
-echo ">> libsrtp en 2.4.2 ($LIBSRTP_REF)"
+echo ">> libsrtp at 2.4.2 ($LIBSRTP_REF)"
 (
 	cd "$SRC"
 	git checkout --quiet "$LIBSRTP_REF" 2>/dev/null || {
@@ -99,59 +101,59 @@ echo ">> libsrtp en 2.4.2 ($LIBSRTP_REF)"
 	}
 	git checkout --quiet -- . 2>/dev/null || true
 ) || {
-	echo "!! no he podido dejar libsrtp en $LIBSRTP_REF."
-	echo "   Si el clon de antes era --depth 1, borralo y vuelve a correr:"
+	echo "!! I could not leave libsrtp at $LIBSRTP_REF."
+	echo "   If the earlier clone was --depth 1, delete it and run again:"
 	echo "     rm -rf $SRC"
 	exit 1
 }
 
-# Y se comprueba que la version es la que se cree, en vez de darlo por hecho.
+# And we check that the version is the one we think it is, instead of assuming.
 if ! grep -rq "srtp_crypto_policy_set_rtp_default" "$SRC/include/srtp.h"; then
-	echo "!! esta libsrtp no trae srtp_crypto_policy_set_rtp_default."
-	echo "   Es la API que usa dtls_srtp.c de libpeer. Si esto salta, el"
-	echo "   checkout no ha ido a la 2.4.2."
+	echo "!! this libsrtp does not have srtp_crypto_policy_set_rtp_default."
+	echo "   It is the API that libpeer's dtls_srtp.c uses. If this fires,"
+	echo "   the checkout has not landed on 2.4.2."
 	exit 1
 fi
 
-# --- el config.h -------------------------------------------------------
+# --- the config.h ------------------------------------------------------
 #
-# libSRTP lo espera de autoconf o cmake. Aqui va a mano, y ahi dentro esta
-# WORDS_BIGENDIAN, que es la linea de la que depende que esto funcione.
-# Ver el comentario largo de ps3_srtp_config.h.
+# libSRTP expects it from autoconf or cmake. Here it goes in by hand, and
+# inside it is WORDS_BIGENDIAN, the one line everything working depends on.
+# See the long comment in ps3_srtp_config.h.
 
 mkdir -p "$WORK/.srtp-cfg"
 cp "$HERE/ps3_srtp_config.h" "$WORK/.srtp-cfg/config.h"
 
-# --- compilacion ------------------------------------------------------
+# --- compilation ------------------------------------------------------
 
-# LAS CABECERAS DE PSL1GHT NO ESTAN EN LA RUTA POR DEFECTO DE ppu-gcc.
+# THE PSL1GHT HEADERS ARE NOT ON ppu-gcc's DEFAULT PATH.
 #
-# libSRTP incluye <netinet/in.h> para ntohs, y esa cabecera SI existe -- el
-# link.c de GR33N lleva semanas usandola. Lo que pasa es que vive en el
-# directorio de PSL1GHT, y quien lo mete en la ruta es $(LIBPSL1GHT_INC)
-# desde ppu_rules, o sea el Makefile del proyecto. Compilando a mano, como
-# aqui, no lo pone nadie.
+# libSRTP includes <netinet/in.h> for ntohs, and that header DOES exist --
+# the link.c in GR33N has been using it for weeks. The thing is it lives in
+# the PSL1GHT directory, and what puts it on the path is $(LIBPSL1GHT_INC)
+# from ppu_rules, i.e. the project Makefile. Compiling by hand, like here,
+# nobody puts it there.
 #
-# Se busca en vez de darla por sabida: si algun dia PSL1GHT cambia de sitio,
-# esto lo dice en vez de fallar con dieciseis errores identicos.
+# We look for it instead of taking it as known: if PSL1GHT ever moves, this
+# says so instead of failing with sixteen identical errors.
 PSL_INC=""
 for d in "$PS3DEV/ppu/include" "$PSL1GHT/ppu/include" \
          "$PS3DEV/portlibs/ppu/include"; do
 	if [ -f "$d/netinet/in.h" ]; then
 		PSL_INC="-I$d"
-		echo ">> cabeceras de PSL1GHT en $d"
+		echo ">> PSL1GHT headers in $d"
 		break
 	fi
 done
 
 if [ -z "$PSL_INC" ]; then
-	echo "no encuentro netinet/in.h en ninguna ruta de PSL1GHT."
-	echo "Buscado en:"
+	echo "cannot find netinet/in.h on any PSL1GHT path."
+	echo "Looked in:"
 	echo "   $PS3DEV/ppu/include"
 	echo "   $PSL1GHT/ppu/include"
 	echo "   $PS3DEV/portlibs/ppu/include"
 	echo
-	echo "Mira donde esta con:  find \$PS3DEV -name in.h -path '*netinet*'"
+	echo "Find where it is with:  find \$PS3DEV -name in.h -path '*netinet*'"
 	exit 1
 fi
 
@@ -160,50 +162,49 @@ CFLAGS="$CFLAGS -I$WORK/.srtp-cfg"
 CFLAGS="$CFLAGS -I$SRC/include -I$SRC/crypto/include -I$SRC"
 CFLAGS="$CFLAGS -I$MBED/include"
 
-# LA MISMA CONFIGURACION DE mbedTLS CON LA QUE SE COMPILO mbedTLS.
+# THE SAME mbedTLS CONFIGURATION mbedTLS ITSELF WAS COMPILED WITH.
 #
-# Esto faltaba, y no se noto porque libSRTP tuvo suerte: solo usa
-# mbedtls_aes_*, mbedtls_gcm_* y mbedtls_md_*, que estan encendidas por
-# defecto. Pero la suerte no es un diseño.
+# This was missing, and it went unnoticed because libSRTP got lucky: it only
+# uses mbedtls_aes_*, mbedtls_gcm_* and mbedtls_md_*, which are on by
+# default. But luck is not a design.
 #
-# Sin este -D, las cabeceras de mbedTLS se leen en su estado POR DEFECTO, que
-# no es el estado con el que se construyo libmbedtls.a. Y la configuracion de
-# mbedTLS no solo enciende y apaga funciones: hay campos de estructura
-# guardados por #if. Compilar contra una configuracion y enlazar contra otra
-# da tamaños de estructura distintos a cada lado, que es corrupcion de
-# memoria en silencio -- exactamente el fallo del sockaddr_conn de usrsctp,
-# por otra puerta.
+# Without this -D, the mbedTLS headers are read in their DEFAULT state, which
+# is not the state libmbedtls.a was built with. And the mbedTLS configuration
+# does not only switch functions on and off: there are struct fields guarded
+# by #if. Compiling against one configuration and linking against another
+# gives different struct sizes on each side, and that is silent memory
+# corruption -- exactly the usrsctp sockaddr_conn bug, through another door.
 #
-# En libpeer si se noto, y a lo grande: dtls_srtp.c no encontraba
-# mbedtls_ssl_srtp_profile ni ninguna de las constantes de SRTP, porque
-# MBEDTLS_SSL_DTLS_SRTP lo enciende ESTE fichero. El sintoma fue ruidoso ahi;
-# aqui habria sido mudo.
+# In libpeer it did get noticed, and loudly: dtls_srtp.c could not find
+# mbedtls_ssl_srtp_profile nor any of the SRTP constants, because
+# MBEDTLS_SSL_DTLS_SRTP is switched on by THIS file. The symptom was noisy
+# there; here it would have been mute.
 #
-# ps3_mbedtls_config.h lo copia build-mbedtls.sh dentro de $MBED/include, o
-# sea que el -I de arriba ya lo pone en la ruta.
+# ps3_mbedtls_config.h is copied into $MBED/include by build-mbedtls.sh, so
+# the -I above already puts it on the path.
 CFLAGS="$CFLAGS -DMBEDTLS_USER_CONFIG_FILE=\"ps3_mbedtls_config.h\""
 
 CFLAGS="$CFLAGS $PSL_INC"
 
-# Aliasing estricto FUERA. libSRTP lee palabras de 32 bits desde buffers de
-# char en varios sitios, que es exactamente lo que GCC da por imposible con
-# -O2. En x86 el codigo generado sale bien de casualidad; aqui no vamos a
-# depender de la casualidad.
+# Strict aliasing OFF. libSRTP reads 32-bit words out of char buffers in
+# several places, which is exactly what GCC takes to be impossible at -O2. On
+# x86 the generated code comes out right by luck; here we are not going to
+# depend on luck.
 CFLAGS="$CFLAGS -fno-strict-aliasing"
 
-# Y que avise si algun cast deja un puntero peor alineado de lo que promete.
+# And let it warn if some cast leaves a pointer worse aligned than it promises.
 CFLAGS="$CFLAGS -Wcast-align"
 
-# Los ficheros, en la misma seleccion que hace CMakeLists.txt con
-# ENABLE_MBEDTLS: la criptografia sale de mbedTLS, no de la propia libSRTP.
-# aes.c, aes_icm.c, hmac.c y sha1.c NO entran a proposito.
-# srtp/srtp_policy.c NO ESTA: es de la 3.0, que partio srtp.c en dos. En la
-# 2.4.2 -- que es la que clava libpeer y por tanto la que compilamos-- todo
-# eso vive dentro de srtp/srtp.c.
+# The files, in the same selection CMakeLists.txt makes with ENABLE_MBEDTLS:
+# the crypto comes from mbedTLS, not from libSRTP itself.
+# aes.c, aes_icm.c, hmac.c and sha1.c are left out on purpose.
+# srtp/srtp_policy.c IS NOT HERE: it is from 3.0, which split srtp.c in two.
+# In 2.4.2 -- which is what libpeer pins and therefore what we compile-- all
+# of that lives inside srtp/srtp.c.
 #
-# Lo que NO entra, y es a proposito: aes.c, aes_icm.c, hmac.c y sha1.c son
-# la criptografia propia de libSRTP, y aqui la pone mbedTLS (MBEDTLS 1 en
-# ps3_srtp_config.h). Los ficheros _nss y _ossl son las otras dos alternativas.
+# What does NOT go in, and it is on purpose: aes.c, aes_icm.c, hmac.c and
+# sha1.c are libSRTP's own crypto, and here mbedTLS provides it (MBEDTLS 1 in
+# ps3_srtp_config.h). The _nss and _ossl files are the other two alternatives.
 FILES="
 srtp/srtp.c
 crypto/cipher/cipher.c
@@ -228,59 +229,59 @@ OBJ="$WORK/.obj-srtp"
 rm -rf "$OBJ" "$OUT"
 mkdir -p "$OBJ" "$OUT/lib" "$OUT/include"
 
-echo ">> compilando con $(basename "$CC")"
+echo ">> compiling with $(basename "$CC")"
 
 n=0
 fail=0
 for f in $FILES; do
 	b=$(echo "$f" | tr '/' '_' | sed 's/\.c$//')
 	if [ ! -f "$SRC/$f" ]; then
-		echo "   NO EXISTE $f  (la lista de arriba se ha quedado atras"
-		echo "                  respecto a esta version de libSRTP)"
+		echo "   MISSING $f  (the list above has fallen behind this"
+		echo "                version of libSRTP)"
 		fail=$((fail + 1))
 		continue
 	fi
 	# shellcheck disable=SC2086
 	if $CC -c "$SRC/$f" -o "$OBJ/$b.o" $CFLAGS 2> "$OBJ/$b.err"; then
 		n=$((n + 1))
-		# Los avisos se enseñan aunque compile: -Wcast-align sobre esta
-		# plataforma es informacion, no ruido.
+		# Warnings are shown even when it compiles: -Wcast-align on this
+		# platform is information, not noise.
 		if [ -s "$OBJ/$b.err" ]; then
-			echo "   avisos en $f:"
+			echo "   warnings in $f:"
 			head -6 "$OBJ/$b.err" | sed 's/^/     /'
 		fi
 	else
 		fail=$((fail + 1))
-		echo "   FALLA $f"
+		echo "   FAILED $f"
 		head -8 "$OBJ/$b.err" | sed 's/^/     /'
 	fi
 done
 
-echo ">> $n compilados, $fail fallidos"
-[ "$fail" -eq 0 ] || { echo "abortando"; exit 1; }
+echo ">> $n compiled, $fail failed"
+[ "$fail" -eq 0 ] || { echo "aborting"; exit 1; }
 
 "$AR" rcs "$OUT/lib/libsrtp2.a" "$OBJ"/*.o
 cp -r "$SRC/include/"*.h "$OUT/include/"
 cp "$HERE/ps3_srtp_config.h" "$OUT/include/"
 
-# Y LAS MISMAS OTRA VEZ, DENTRO DE srtp2/.
+# AND THE SAME ONES AGAIN, INSIDE srtp2/.
 #
-# libpeer las incluye asi: `#include <srtp2/srtp.h>`. Ese subdirectorio es
-# como se instala libSRTP de verdad -- lo hace su propio `make install`, y
-# es donde lo buscan todos los que la usan-- pero aqui compilamos a mano y
-# nadie lo estaba creando. Salia "srtp2/srtp.h: No such file or directory"
-# en cuatro ficheros de libpeer.
+# libpeer includes them like this: `#include <srtp2/srtp.h>`. That
+# subdirectory is how libSRTP really gets installed -- its own `make install`
+# does it, and it is where everyone who uses it looks-- but here we compile
+# by hand and nobody was creating it. It came out as "srtp2/srtp.h: No such
+# file or directory" in four libpeer files.
 #
-# Se copian en los dos sitios en vez de mover: quien incluya <srtp.h> a
-# secas -- como hace el propio libSRTP por dentro-- lo sigue encontrando.
+# They are copied to both places instead of moved: anyone including a bare
+# <srtp.h> -- like libSRTP itself does internally-- still finds it.
 mkdir -p "$OUT/include/srtp2"
 cp "$SRC/include/"*.h "$OUT/include/srtp2/"
 
-# --- que queda sin resolver -------------------------------------------
+# --- what is left unresolved ------------------------------------------
 #
-# Indefinidos MENOS definidos, no indefinidos a secas: nm sobre un ARCHIVO
-# lista los indefinidos de cada objeto, incluidos los que resuelve el
-# objeto de al lado. Esa leccion ya la pagamos con mbedTLS.
+# Undefined MINUS defined, not undefined on its own: nm on an ARCHIVE lists
+# the undefined symbols of every object, including the ones the object next
+# to it resolves. We already paid for that lesson with mbedTLS.
 
 if [ -x "$NM" ]; then
 	"$NM" --undefined-only "$OUT/lib/libsrtp2.a" 2>/dev/null \
@@ -289,37 +290,38 @@ if [ -x "$NM" ]; then
 		| awk '{print $3}' | grep -v '^$' | sort -u > "$WORK/.def"
 
 	echo
-	echo ">> simbolos sin resolver:"
+	echo ">> unresolved symbols:"
 	comm -23 "$WORK/.undef" "$WORK/.def" | sed 's/^/   /'
 	rm -f "$WORK/.undef" "$WORK/.def"
 
 	echo
-	echo "   Esperado:"
+	echo "   Expected:"
 	echo "     - libc: memcpy, memset, calloc, free, strlen, rand, clock,"
-	echo "       exit, sscanf, vfprintf... todo eso lo trae newlib."
-	echo "     - mbedtls_aes_*, mbedtls_gcm_* y mbedtls_md_*, que llegan"
-	echo "       al enlazar el EBOOT contra libmbedtls.a."
+	echo "       exit, sscanf, vfprintf... newlib brings all of that."
+	echo "     - mbedtls_aes_*, mbedtls_gcm_* and mbedtls_md_*, which turn"
+	echo "       up when linking the EBOOT against libmbedtls.a."
 	echo
-	echo "   OJO, QUE ESTO CAMBIO AL CLAVAR LA 2.4.2. Aqui ponia que"
-	echo "   saldrian trece simbolos psa_*, y era verdad con la 3.0.0:"
-	echo "   aquella habla con mbedTLS por la API nueva (PSA). La 2.4.2"
-	echo "   usa la CLASICA -- mbedtls_aes_crypt_ctr, mbedtls_gcm_setkey,"
-	echo "   mbedtls_md_hmac_starts--, que es otra lista entera de"
-	echo "   simbolos. El mensaje se quedo describiendo la version que ya"
-	echo "   no compilamos."
+	echo "   CAREFUL, THIS CHANGED WHEN 2.4.2 WAS PINNED. This used to say"
+	echo "   thirteen psa_* symbols would show up, and that was true with"
+	echo "   3.0.0: that one talks to mbedTLS through the new API (PSA)."
+	echo "   2.4.2 uses the CLASSIC one -- mbedtls_aes_crypt_ctr,"
+	echo "   mbedtls_gcm_setkey, mbedtls_md_hmac_starts--, which is a"
+	echo "   whole other list of symbols. The message was left describing"
+	echo "   the version we no longer compile."
 	echo
-	echo "   Cualquier OTRA cosa hay que mirarla antes de seguir."
+	echo "   Anything ELSE has to be looked at before going on."
 
-	# --- Y QUE mbedTLS TRAIGA ESOS SIMBOLOS, COMPROBADO -----------
+	# --- AND THAT mbedTLS BRINGS THOSE SYMBOLS, CHECKED -----------
 	#
-	# Que salgan aqui sin resolver es normal: se resuelven al enlazar el
-	# EBOOT. Lo que NO es normal es darlo por hecho. Si
-	# ps3_mbedtls_config.h apagara MBEDTLS_GCM_C o MBEDTLS_MD_C -- hoy no
-	# lo hace, pero es exactamente el tipo de recorte que se hace un dia
-	# para ahorrar sitio-- estos quedarian sin resolver hasta el ultimo
-	# enlace, entre otros cien errores.
+	# That they come out unresolved here is normal: they get resolved
+	# when linking the EBOOT. What is NOT normal is taking it for
+	# granted. If ps3_mbedtls_config.h switched off MBEDTLS_GCM_C or
+	# MBEDTLS_MD_C -- it does not today, but that is exactly the kind
+	# of trimming somebody does one day to save space-- these would
+	# stay unresolved until the very last link, among another hundred
+	# errors.
 	#
-	# La comprobacion cuesta un nm y se hace ahora.
+	# The check costs one nm and it happens now.
 	MBED_A="$MBED/lib/libmbedtls.a"
 	if [ -f "$MBED_A" ]; then
 		echo
@@ -333,14 +335,14 @@ if [ -x "$NM" ]; then
 		done
 
 		if [ -z "$sin" ]; then
-			echo ">> la API clasica de mbedTLS esta en libmbedtls.a"
-			echo "   (aes, gcm y md: comprobado, no supuesto)"
+			echo ">> the classic mbedTLS API is in libmbedtls.a"
+			echo "   (aes, gcm and md: checked, not assumed)"
 		else
-			echo "!! libmbedtls.a NO define:$sin"
+			echo "!! libmbedtls.a does NOT define:$sin"
 			echo
-			echo "   libSRTP 2.4.2 los necesita. Mira que"
-			echo "   ps3_mbedtls_config.h no haya apagado MBEDTLS_AES_C,"
-			echo "   MBEDTLS_GCM_C o MBEDTLS_MD_C."
+			echo "   libSRTP 2.4.2 needs them. Check that"
+			echo "   ps3_mbedtls_config.h has not switched off"
+			echo "   MBEDTLS_AES_C, MBEDTLS_GCM_C or MBEDTLS_MD_C."
 			exit 1
 		fi
 	fi
@@ -349,5 +351,5 @@ fi
 rm -rf "$OBJ"
 
 echo
-echo ">> listo: $OUT/lib/libsrtp2.a  ($(du -h "$OUT/lib/libsrtp2.a" | cut -f1))"
-echo ">> cabeceras en $OUT/include"
+echo ">> done: $OUT/lib/libsrtp2.a  ($(du -h "$OUT/lib/libsrtp2.a" | cut -f1))"
+echo ">> headers in $OUT/include"

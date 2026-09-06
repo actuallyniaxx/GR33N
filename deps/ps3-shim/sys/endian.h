@@ -14,7 +14,7 @@
  * conversion de orden equivocada no da error: da paquetes que no se
  * entienden
  *
- * Ver deps/ps3-shim/LEEME.md.
+ * Ver deps/ps3-shim/README.md.
  */
 
 #ifndef GR33N_SYS_ENDIAN_H

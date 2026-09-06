@@ -11,7 +11,7 @@
  * Los tipos estan para que compile. Las funciones las resuelve
  * ps3_stubs.c, que devuelve "no hay interfaces", que es la verdad
  *
- * Ver deps/ps3-shim/LEEME.md.
+ * Ver deps/ps3-shim/README.md.
  */
 
 #ifndef GR33N_NET_IF_H

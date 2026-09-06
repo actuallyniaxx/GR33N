@@ -10,7 +10,7 @@
  * El stub de ps3_stubs.c devuelve una lista vacia y exito, que es
  * exactamente la verdad de esta plataforma
  *
- * Ver deps/ps3-shim/LEEME.md.
+ * Ver deps/ps3-shim/README.md.
  */
 
 #ifndef GR33N_IFADDRS_H

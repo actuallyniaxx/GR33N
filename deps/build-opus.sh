@@ -1,61 +1,61 @@
 #!/bin/sh
 #
-# GR33N - construye libopus para PS3 (PSL1GHT / ppu-gcc)
+# GR33N - builds libopus for PS3 (PSL1GHT / ppu-gcc)
 #
 #   sh build-opus.sh
 #
-# Deja $HOME/.gr33n-deps/opus-ps3/ con:
-#   include/opus/       cabeceras
+# Leaves $HOME/.gr33n-deps/opus-ps3/ with:
+#   include/opus/       headers
 #   lib/libopus.a
 #
-# Misma forma que build-mbedtls.sh y build-libsrtp.sh, y por las mismas
-# razones: todo dentro de $HOME y nunca en /mnt/c (DrvFs no deja cambiar
-# permisos), y una salida provisional que solo se mueve a su sitio cuando
-# todas las comprobaciones pasan -- que eso ya mordio una vez, cuando un
-# build-libpeer.sh fallido borro peer.h y el make siguiente murio con un
-# error que no tenia nada que ver.
+# Same shape as build-mbedtls.sh and build-libsrtp.sh, and for the same
+# reasons: everything inside $HOME and never in /mnt/c (DrvFs will not let
+# you change permissions), and a provisional output that only moves into
+# place once every check passes -- because that one already bit us, when a
+# failed build-libpeer.sh deleted peer.h and the next make died with an
+# error that had nothing to do with it.
 #
 # ------------------------------------------------------------------
-# POR QUE OPUS Y NO OTRA COSA
+# WHY OPUS AND NOT SOMETHING ELSE
 # ------------------------------------------------------------------
 #
-# Porque es lo que manda xCloud y no hay eleccion. La oferta SDP que ya
-# sale de la consola dice:
+# Because it is what xCloud sends and there is no choice. The SDP offer
+# that already comes out of the console says:
 #
 #   m=audio 9 UDP/TLS/RTP/SAVPF 111
 #   a=rtpmap:111 opus/48000/2
 #
-# O sea que llevamos semanas recibiendo audio Opus y tirandolo por no
-# tener con que descodificarlo.
+# Which is to say we have spent weeks receiving Opus audio and throwing it
+# away for want of anything to decode it with.
 #
 # ------------------------------------------------------------------
-# PUNTO FIJO, Y NO ES UNA PRECAUCION TONTA
+# FIXED POINT, AND IT IS NOT A SILLY PRECAUTION
 # ------------------------------------------------------------------
 #
-# --enable-fixed-point. El PPE del Cell es un nucleo en orden de 2006 con
-# una unidad de coma flotante que no destaca, y ademas ya lleva encima el
-# bombeo de WebRTC, el descifrado SRTP y el reparto al RSX. El SPU esta
-# ocupado con H.264.
+# --enable-fixed-point. The Cell's PPE is an in-order core from 2006 with
+# an unremarkable floating-point unit, and on top of that it is already
+# carrying the WebRTC packet pumping, the SRTP decryption and the hand-off
+# to the RSX. The SPU is busy with H.264.
 #
-# La version de punto fijo de Opus es la que usan los telefonos: no es un
-# camino raro ni poco probado, es el mas probado de los dos. La diferencia
-# de calidad frente al flotante es inaudible -- lo dice la propia gente de
-# Opus-- y el consumo es mucho mas predecible, que en una consola donde ya
-# vamos justos importa mas que el ultimo decibelio.
+# The fixed-point build of Opus is the one phones use: it is not an odd or
+# little-tested path, it is the more tested of the two. The difference in
+# quality against floating point is inaudible -- the Opus people say so
+# themselves-- and the cost is far more predictable, which on a console
+# where we are already tight matters more than the last decibel.
 #
-# Si algun dia sobra CPU, se quita el --enable-fixed-point y se mide. Pero
-# se mide: no se cambia por corazonada.
+# If one day there is CPU to spare, take out the --enable-fixed-point and
+# measure. But measure: you do not change it on a hunch.
 #
 # ------------------------------------------------------------------
-# NO HACE FALTA REMUESTREAR, Y ESO ES UN REGALO
+# NO RESAMPLING NEEDED, AND THAT IS A GIFT
 # ------------------------------------------------------------------
 #
-# Opus descodifica a 48000 Hz. El puerto de audio de la PS3 sale a 48000
-# Hz. Son el mismo numero, asi que no hay remuestreo, no hay filtro, no hay
-# error acumulado y no hay una tercera biblioteca que compilar.
+# Opus decodes at 48000 Hz. The PS3's audio port puts out 48000 Hz. They
+# are the same number, so there is no resampling, no filter, no error
+# piling up and no third library to compile.
 #
-# Es de las pocas cosas de este puerto que salen gratis. Conviene no
-# estropearlo metiendo un remuestreador "por si acaso".
+# It is one of the few things in this port that come for free. Best not to
+# spoil it by dropping in a resampler "just in case".
 
 set -e
 
@@ -76,45 +76,47 @@ OBRAS="$WORK/.opus-ps3-en-obras"
 mkdir -p "$WORK"
 
 if [ ! -x "$CC" ]; then
-	echo "no encuentro $CC"
-	echo "exporta PS3DEV o corrige la ruta"
+	echo "cannot find $CC"
+	echo "export PS3DEV or fix the path"
 	exit 1
 fi
 
-# --- fuentes ----------------------------------------------------------
+# --- sources ----------------------------------------------------------
 
-# EL COMMIT CLAVADO, por lo mismo que en libsrtp: master no es una version,
-# es lo que haya hoy.
+# THE PINNED COMMIT, for the same reason as in libsrtp: master is not a
+# version, it is whatever happens to be there today.
 #
-# v1.4, no "v1.4.3": esa version NO EXISTE, me la invente. Las de xiph/opus
-# son v1.3.1, v1.4, v1.5, v1.5.1, v1.5.2. Ahora el script lo comprueba en
-# vez de fiarse, y si el tag no esta te ensena los que si.
+# v1.4, not "v1.4.3": that version DOES NOT EXIST, I made it up. The ones
+# xiph/opus has are v1.3.1, v1.4, v1.5, v1.5.1, v1.5.2. Now the script
+# checks instead of trusting, and if the tag is not there it shows you the
+# ones that are.
 #
-# La 1.4 y no la 1.5 porque la 1.5 trae DRED, un modelo de red neuronal
-# para esconder perdidas. En un PPE de 2006 eso no pinta nada.
+# 1.4 and not 1.5 because 1.5 brings DRED, a neural network model for
+# hiding losses. On a PPE from 2006 that has no business being there.
 OPUS_REF=v1.4
 
 if [ ! -d "$SRC" ]; then
-	echo ">> clonando opus"
+	echo ">> cloning opus"
 	git clone --quiet https://github.com/xiph/opus.git "$SRC"
 fi
 
-echo ">> opus en $OPUS_REF"
+echo ">> opus at $OPUS_REF"
 
-# EL PARENTESIS QUE SE TRAGABA EL FALLO.
+# THE PARENTHESES THAT SWALLOWED THE FAILURE.
 #
-# Aqui habia un subshell que terminaba en `git checkout -- . || true`. El
-# estado de salida de un subshell es el de su ULTIMO comando, y ese ultimo
-# comando era literalmente incapaz de fallar. Asi que el `|| exit 1` de
-# fuera no se disparaba nunca.
+# There was a subshell here that ended in `git checkout -- . || true`. The
+# exit status of a subshell is that of its LAST command, and that last
+# command was literally incapable of failing. So the `|| exit 1` on the
+# outside never fired once.
 #
-# Resultado: "error: pathspec 'v1.4.3' did not match any file(s)" salio por
-# pantalla, el script dijo ">> reuniendo fuentes" y siguio tan tranquilo
-# compilando MASTER. Los errores de qext_cache y NB_QEXT_BANDS de despues
-# eran eso: codigo de la 1.5 que no deberia haber estado ahi.
+# Result: "error: pathspec 'v1.4.3' did not match any file(s)" went up on
+# screen, the script said ">> gathering sources" and carried on quite
+# happily compiling MASTER. The qext_cache and NB_QEXT_BANDS errors that
+# came afterwards were exactly that: 1.5 code that should never have been
+# there.
 #
-# Una guarda que no puede fallar no es una guarda. Van tres en este
-# proyecto, y esta la escribi yo mismo hace media hora.
+# A guard that cannot fail is not a guard. That makes three in this
+# project, and I wrote this one myself half an hour ago.
 if ! (
 	cd "$SRC" &&
 	{ git checkout --quiet "$OPUS_REF" 2>/dev/null ||
@@ -122,86 +124,86 @@ if ! (
 	    git checkout --quiet "$OPUS_REF"; }; } &&
 	git checkout --quiet -- .
 ); then
-	echo "!! no existe el tag $OPUS_REF en este clon."
+	echo "!! the tag $OPUS_REF does not exist in this clone."
 	echo
-	echo "   Los que si hay:"
+	echo "   The ones that do:"
 	(cd "$SRC" && git tag -l 'v*' | tail -12 | sed 's/^/     /')
 	echo
-	echo "   Si el clon era --depth 1, borralo y repite:  rm -rf $SRC"
+	echo "   If the clone was --depth 1, delete it and try again:  rm -rf $SRC"
 	exit 1
 fi
 
-# --- y AHORA se comprueba de verdad que version es ---------------------
+# --- and NOW we really do check which version it is -------------------
 #
-# La comprobacion que habia aqui buscaba opus_decode_float en opus.h. Esa
-# funcion existe desde la 1.0: la comprobacion pasaba con CUALQUIER
-# version, incluida la master que no queriamos. Comprobar algo que siempre
-# es cierto es no comprobar nada.
+# The check that used to be here looked for opus_decode_float in opus.h.
+# That function has existed since 1.0: the check passed with ANY version,
+# including the master we did not want. Checking something that is always
+# true is checking nothing at all.
 #
-# Estas dos si distinguen:
+# These two do tell them apart:
 
-VER=$( cd "$SRC" && git describe --tags --exact-match HEAD 2>/dev/null || echo "(ninguno)" )
+VER=$( cd "$SRC" && git describe --tags --exact-match HEAD 2>/dev/null || echo "(none)" )
 if [ "$VER" != "$OPUS_REF" ]; then
-	echo "!! HEAD esta en '$VER', no en '$OPUS_REF'."
+	echo "!! HEAD is at '$VER', not at '$OPUS_REF'."
 	exit 1
 fi
-echo "   git describe dice: $VER"
+echo "   git describe says: $VER"
 
-# NB_QEXT_BANDS solo existe a partir de la 1.5. Si aparece, esto es master
-# por mucho que el tag diga otra cosa.
+# NB_QEXT_BANDS only exists from 1.5 onwards. If it shows up, this is
+# master however much the tag says otherwise.
 if grep -rq "NB_QEXT_BANDS" "$SRC/celt/" 2>/dev/null; then
-	echo "!! este arbol tiene QEXT: es 1.5 o master, no la 1.4."
-	echo "   Limpia y repite:  rm -rf $SRC"
+	echo "!! this tree has QEXT: it is 1.5 or master, not 1.4."
+	echo "   Clean it out and try again:  rm -rf $SRC"
 	exit 1
 fi
-echo "   sin QEXT: es la rama 1.4"
+echo "   no QEXT: this is the 1.4 branch"
 
-# --- configuracion a mano ---------------------------------------------
+# --- configuration by hand --------------------------------------------
 #
-# NADA DE ./configure. Opus trae autotools y cmake, y los dos quieren
-# compilar y EJECUTAR programas de prueba para averiguar cosas del sistema.
-# Cruzando a PowerPC eso no se puede: el binario no corre aqui. Se puede
-# pelear con --host y un cache de respuestas, o se puede escribir el
-# config.h a mano, que son veinte lineas y no miente.
+# NO ./configure. Opus ships autotools and cmake, and both of them want to
+# compile and RUN test programs to work things out about the system.
+# Cross-compiling to PowerPC you cannot do that: the binary does not run
+# here. You can either fight with --host and a cache of canned answers, or
+# you can write config.h by hand, which is twenty lines and does not lie.
 #
-# Es exactamente lo que ya se hizo con mbedTLS y con libSRTP, y por lo
-# mismo.
+# It is exactly what was already done with mbedTLS and with libSRTP, and
+# for the same reason.
 
 mkdir -p "$WORK/.opus-cfg"
 cat > "$WORK/.opus-cfg/config.h" <<'CFG'
-/* GR33N - config.h de opus para PS3, escrito a mano.
+/* GR33N - opus config.h for PS3, written by hand.
  *
  * ------------------------------------------------------------------
- * AQUI CASI ME LA PEGO, Y EL FALLO HABRIA SIDO MUDO
+ * I NEARLY CAME A CROPPER HERE, AND THE FAILURE WOULD HAVE BEEN SILENT
  * ------------------------------------------------------------------
  *
- * La primera version de este fichero ponia cosas como:
+ * The first version of this file put things like:
  *
  *     #define DISABLE_FLOAT_API  0
  *     #define HAVE_LRINTF        0
  *     #define USE_ALLOCA         0
  *
- * leyendo "0" como "apagado". Pero opus NO las prueba con #if, las prueba
- * con #ifdef:
+ * reading "0" as "off". But opus does NOT test them with #if, it tests
+ * them with #ifdef:
  *
- *     #ifndef DISABLE_FLOAT_API      <- en opus.h, alrededor de
+ *     #ifndef DISABLE_FLOAT_API      <- in opus.h, around
  *     ...                               opus_decode_float
  *     #endif
  *
- * Definir algo a 0 lo deja DEFINIDO. O sea que esas tres lineas
- * significaban exactamente lo contrario de lo que parecian:
+ * Defining something to 0 leaves it DEFINED. Which means those three
+ * lines meant exactly the opposite of what they looked like:
  *
- *   - DISABLE_FLOAT_API 0  ->  se va opus_decode_float, que es justo la
- *                              funcion que aud.c necesita. La comprobacion
- *                              del final del script la habria cazado, pero
- *                              con "no esta" y sin decir por que.
- *   - HAVE_LRINTF 0        ->  opus llama a lrintf, que newlib puede no
- *                              traer. Error de enlace al final de todo.
- *   - USE_ALLOCA 0         ->  alloca() en hilos con pila de 64 KB.
- *                              Eso no da error: da pisotones de memoria.
+ *   - DISABLE_FLOAT_API 0  ->  opus_decode_float goes away, which is the
+ *                              very function aud.c needs. The check at the
+ *                              end of the script would have caught it, but
+ *                              with a "not there" and no word on why.
+ *   - HAVE_LRINTF 0        ->  opus calls lrintf, which newlib may not
+ *                              ship. Link error right at the very end.
+ *   - USE_ALLOCA 0         ->  alloca() in threads with 64 KB stacks.
+ *                              That does not error: it tramples memory.
  *
- * La regla, para no repetirlo: aqui NO se apaga nada poniendolo a cero.
- * Lo que no se quiere, NO SE ESCRIBE.
+ * The rule, so as not to repeat it: nothing here is turned off by setting
+ * it to zero. What you do not want, YOU DO NOT WRITE.
  */
 #ifndef GR33N_OPUS_CONFIG_H
 #define GR33N_OPUS_CONFIG_H
@@ -209,49 +211,50 @@ cat > "$WORK/.opus-cfg/config.h" <<'CFG'
 #define OPUS_BUILD       1
 #define PACKAGE_VERSION  "1.4-gr33n"
 
-/* PUNTO FIJO. Ver el comentario largo de build-opus.sh. */
+/* FIXED POINT. See the long comment in build-opus.sh. */
 #define FIXED_POINT      1
 
-/* Arrays de tamano variable de C99 en vez de alloca(). Los hilos de este
- * proyecto tienen pilas medidas y alloca no respeta ninguna. */
+/* C99 variable-length arrays instead of alloca(). The threads in this
+ * project have measured stacks and alloca respects none of them. */
 #define VAR_ARRAYS       1
 
-/* Y NADA MAS.
+/* AND NOTHING ELSE.
  *
- * En particular NO estan, a proposito y no por olvido:
- *   DISABLE_FLOAT_API   - se quiere el API flotante (el puerto de la PS3
- *                         come float; convertir aqui ahorra un paso)
- *   HAVE_LRINTF / HAVE_LRINT - newlib no los garantiza
- *   USE_ALLOCA          - ver arriba
- *   OPUS_HAVE_RTCD      - el PPE tiene VMX, pero el camino PowerPC de opus
- *                         no esta escrito ni probado para un nucleo en
- *                         orden. El C de siempre es correcto, y aqui la
- *                         correccion vale mas. Si algun dia sobra CPU,
- *                         esto es lo primero que se mide.
+ * In particular these are NOT here, on purpose and not by oversight:
+ *   DISABLE_FLOAT_API   - we want the float API (the PS3 port eats
+ *                         float; converting here saves a step)
+ *   HAVE_LRINTF / HAVE_LRINT - newlib does not guarantee them
+ *   USE_ALLOCA          - see above
+ *   OPUS_HAVE_RTCD      - the PPE has VMX, but the opus PowerPC path is
+ *                         neither written nor tested for an in-order
+ *                         core. Plain C is correct, and here correctness
+ *                         is worth more. If one day there is CPU to
+ *                         spare, this is the first thing to measure.
  */
 
 #endif
 CFG
 
-# --- que fuentes ------------------------------------------------------
+# --- which sources ----------------------------------------------------
 #
-# SE LAS PREGUNTAMOS A OPUS. No se listan a mano y tampoco se buscan con
-# find: opus trae sus propias listas en celt_sources.mk, silk_sources.mk y
-# opus_sources.mk, que es lo que usa su Makefile.am de verdad.
+# WE ASK OPUS. They are not listed by hand and they are not hunted down
+# with find either: opus ships its own lists in celt_sources.mk,
+# silk_sources.mk and opus_sources.mk, which is what its real Makefile.am
+# uses.
 #
-# El intento anterior era un find con exclusiones (-not -path '*/arm/*',
-# '*/x86/*'...) y se dejo fuera celt/dump_modes/, que es una herramienta de
-# construccion y no biblioteca. De ahi los errores de dump_modes.c.
+# The previous attempt was a find with exclusions (-not -path '*/arm/*',
+# '*/x86/*'...) and it left out celt/dump_modes/, which is a build tool
+# and not library. Hence the dump_modes.c errors.
 #
-# Una lista de exclusiones es una lista paralela mantenida a mano por la
-# puerta de atras: hay que acordarse de cada directorio nuevo que aparezca.
-# Las .mk son la lista de verdad, la mantiene opus, y separan ademas el
-# punto fijo del flotante sin que tengamos que decidirlo nosotros.
+# A list of exclusions is a parallel list maintained by hand through the
+# back door: you have to remember every new directory that turns up. The
+# .mk files are the real list, opus maintains them, and on top of that
+# they separate fixed point from floating without us having to decide it.
 #
-# Se leen con make, que es quien sabe leerlas. Escribir un parser de
-# Makefiles a mano para esto seria la tercera lista.
+# They are read with make, which is what knows how to read them. Writing a
+# Makefile parser by hand for this would be the third list.
 
-echo ">> preguntandole a opus que ficheros son suyos"
+echo ">> asking opus which files are its own"
 
 cat > "$WORK/.opus-cfg/listar.mk" <<'MK'
 include celt_sources.mk
@@ -264,14 +267,15 @@ listar:
 MK
 
 FUENTES_REL=$(make -s -C "$SRC" -f "$WORK/.opus-cfg/listar.mk" listar) || {
-	echo "!! no he podido leer las listas .mk de opus."
-	echo "   Mira si estan:  ls $SRC/*_sources.mk"
+	echo "!! I could not read opus's .mk lists."
+	echo "   See if they are there:  ls $SRC/*_sources.mk"
 	exit 1
 }
 
-# A rutas absolutas, y comprobando que cada una existe. Un fichero que la
-# .mk nombra y no esta es una senal de arbol incompleto, y vale mas verlo
-# aqui que en forma de simbolo sin resolver dentro de media hora.
+# To absolute paths, and checking that each one exists. A file that the
+# .mk names and is not there is a sign of an incomplete tree, and it is
+# worth seeing that here rather than as an unresolved symbol half an hour
+# from now.
 FUENTES=""
 N=0
 for f in $FUENTES_REL; do
@@ -281,7 +285,7 @@ for f in $FUENTES_REL; do
 	esac
 
 	if [ ! -f "$SRC/$f" ]; then
-		echo "!! la lista nombra $f y no existe en el arbol"
+		echo "!! the list names $f and it is not in the tree"
 		exit 1
 	fi
 
@@ -289,67 +293,67 @@ for f in $FUENTES_REL; do
 	N=$((N + 1))
 done
 
-echo "   $N ficheros, de las listas de la propia opus"
+echo "   $N files, from opus's own lists"
 
-# NO SE COMPRUEBA CONTRA UN NUMERO, y esto ya me mordio: la primera version
-# exigia "al menos 150 ficheros" -- un umbral que me saque de la manga
-# comparandolo con los 137 que habia juntado el find roto de antes. Las
-# listas de la 1.4 dan 131, que es LO CORRECTO, y la comprobacion tumbo un
-# resultado bueno.
+# NOTHING IS CHECKED AGAINST A NUMBER, and this one already bit me: the
+# first version demanded "at least 150 files" -- a threshold I pulled out
+# of thin air by comparing it with the 137 the broken find had gathered
+# before. The 1.4 lists give 131, which is THE RIGHT ANSWER, and the check
+# knocked back a good result.
 #
-# Un umbral inventado no comprueba nada: solo dice si el numero se parece
-# al que uno esperaba. Lo que de verdad importa es que las CUATRO listas
-# hayan aportado algo; si una variable no se expande, su grupo entero
-# desaparece y eso si es un fallo de verdad. Se mira por prefijo, que no
-# depende de que yo recuerde bien ningun nombre de fichero.
+# An invented threshold checks nothing: it only says whether the number
+# looks like the one you were expecting. What really matters is that all
+# FOUR lists contributed something; if a variable does not expand, its
+# whole group disappears and that is a real failure. It is looked at by
+# prefix, which does not depend on me remembering any filename correctly.
 
 falta_grupo=0
 for pre in "celt/" "silk/" "silk/fixed/" "src/"; do
 	if ! echo "$FUENTES_REL" | tr " " "\n" | grep -q "^$pre"; then
-		echo "!! ningun fichero de $pre: esa lista no se ha expandido"
+		echo "!! not one file from $pre: that list did not expand"
 		falta_grupo=1
 	fi
 done
 
-# Y dos ficheros concretos, comprobados uno a uno contra el arbol de la
-# v1.4 antes de escribirlos aqui. Si estos dos estan, las listas se han
-# leido.
+# And two specific files, checked one by one against the v1.4 tree before
+# writing them in here. If these two are present, the lists have been
+# read.
 for f in silk/decode_core.c silk/fixed/find_LPC_FIX.c; do
 	if ! echo "$FUENTES_REL" | tr " " "\n" | grep -qx "$f"; then
-		echo "!! falta $f en la lista"
+		echo "!! $f is missing from the list"
 		falta_grupo=1
 	fi
 done
 
 if [ "$falta_grupo" = "1" ]; then
 	echo
-	echo "   Pruebalo a mano:"
+	echo "   Try it by hand:"
 	echo "     make -s -C $SRC -f $WORK/.opus-cfg/listar.mk listar"
 	exit 1
 fi
 
-echo "   las cuatro listas han aportado ficheros"
+echo "   all four lists contributed files"
 
-# --- las cabeceras de PSL1GHT -----------------------------------------
+# --- the PSL1GHT headers ----------------------------------------------
 #
-# Igual que en libsrtp: no estan en la ruta por defecto de ppu-gcc, las
-# pone el Makefile del proyecto desde ppu_rules. Compilando a mano no las
-# pone nadie. Opus casi no usa cabeceras del sistema, pero <stdint.h> y
-# compania si, y mas vale tener la ruta buena.
+# Same as in libsrtp: they are not on ppu-gcc's default path, the
+# project's Makefile puts them there from ppu_rules. Compiling by hand
+# nobody puts them there. Opus barely uses system headers, but <stdint.h>
+# and friends it does, and it is better to have the right path.
 
 PSL_INC=""
 for d in "$PS3DEV/ppu/include" "$PSL1GHT/ppu/include" \
          "$PS3DEV/portlibs/ppu/include"; do
 	if [ -f "$d/netinet/in.h" ]; then
 		PSL_INC="-I$d"
-		echo ">> cabeceras de PSL1GHT en $d"
+		echo ">> PSL1GHT headers at $d"
 		break
 	fi
 done
 
-[ -n "$PSL_INC" ] || echo ">> sin cabeceras de PSL1GHT (opus casi no las usa)"
+[ -n "$PSL_INC" ] || echo ">> no PSL1GHT headers (opus barely uses them)"
 
-# --- compilacion ------------------------------------------------------
+# --- compilation ------------------------------------------------------
 
 CFLAGS="-O2 -std=gnu99 -mcpu=cell -DHAVE_CONFIG_H"
 CFLAGS="$CFLAGS -I$WORK/.opus-cfg"
@@ -357,15 +361,15 @@ CFLAGS="$CFLAGS -I$SRC/include -I$SRC/celt -I$SRC/silk -I$SRC/silk/fixed"
 CFLAGS="$CFLAGS -I$SRC/src"
 CFLAGS="$CFLAGS $PSL_INC"
 
-# Aliasing estricto FUERA, por lo mismo que en libSRTP: Opus lee palabras
-# desde buffers de char en el empaquetador de rangos. En x86 sale bien de
-# casualidad.
+# Strict aliasing OFF, for the same reason as in libSRTP: Opus reads words
+# out of char buffers in the range encoder. On x86 that comes out right by
+# luck.
 CFLAGS="$CFLAGS -fno-strict-aliasing"
 
 rm -rf "$OBRAS"
 mkdir -p "$OBRAS/obj" "$OBRAS/lib" "$OBRAS/include/opus"
 
-echo ">> compilando ($N ficheros, esto tarda un rato)"
+echo ">> compiling ($N files, this takes a while)"
 
 FALLOS=0
 i=0
@@ -375,13 +379,13 @@ for f in $FUENTES; do
 
 	if ! $CC $CFLAGS -c "$f" -o "$o" 2> "$OBRAS/err.txt"; then
 		echo
-		echo "!! falla: $f"
+		echo "!! fails: $f"
 		sed 's/^/   /' "$OBRAS/err.txt" | head -20
 		FALLOS=$((FALLOS + 1))
 		[ "$FALLOS" -ge 3 ] && {
 			echo
-			echo "   tres fallos, paro. Los de arriba suelen ser el mismo"
-			echo "   problema repetido."
+			echo "   three failures, stopping. The ones above are usually"
+			echo "   the same problem repeated."
 			exit 1
 		}
 	fi
@@ -389,47 +393,48 @@ for f in $FUENTES; do
 	[ $((i % 40)) -eq 0 ] && echo "   $i/$N"
 done
 
-[ "$FALLOS" -eq 0 ] || { echo "!! $FALLOS ficheros no compilan"; exit 1; }
+[ "$FALLOS" -eq 0 ] || { echo "!! $FALLOS files do not compile"; exit 1; }
 
 echo "   $N/$N"
 
-# --- biblioteca -------------------------------------------------------
+# --- library ----------------------------------------------------------
 
-echo ">> archivando"
+echo ">> archiving"
 $AR rcs "$OBRAS/lib/libopus.a" "$OBRAS"/obj/*.o
 $RANLIB "$OBRAS/lib/libopus.a" 2>/dev/null || true
 
 cp "$SRC/include/"*.h "$OBRAS/include/opus/"
 
-# --- las comprobaciones -----------------------------------------------
+# --- the checks -------------------------------------------------------
 #
-# Que compile no quiere decir que sirva. Lo que hace falta es que estén
-# las funciones que aud.c va a llamar, y que no falte nada del sistema.
+# That it compiles does not mean it is any use. What is needed is that the
+# functions aud.c is going to call are there, and that nothing from the
+# system is missing.
 
 echo
 echo "=============================================================="
-echo " comprobaciones"
+echo " checks"
 echo "=============================================================="
 
-# UNA FUNCION EN POWERPC64 TIENE DOS SIMBOLOS, Y ESO TUMBO LAS NUEVE.
+# A FUNCTION ON POWERPC64 HAS TWO SYMBOLS, AND THAT KNOCKED BACK ALL NINE.
 #
-# El PPU usa el ABI ELFv1, donde una funcion no es una direccion: es un
-# DESCRIPTOR de tres palabras que vive en la seccion .opd y apunta al
-# codigo. Asi que nm ensena dos entradas por funcion:
+# The PPU uses the ELFv1 ABI, where a function is not an address: it is a
+# three-word DESCRIPTOR that lives in the .opd section and points at the
+# code. So nm shows two entries per function:
 #
-#     0000000000000000 D opus_decoder_create      <- el descriptor
-#     0000000000000000 T .opus_decoder_create     <- el codigo, con punto
+#     0000000000000000 D opus_decoder_create      <- the descriptor
+#     0000000000000000 T .opus_decoder_create     <- the code, with a dot
 #
-# La comprobacion de antes exigia " T opus_decoder_create" y daba NO en
-# las nueve, con libopus.a perfectamente construida. Un "no esta" que en
-# realidad decia "no esta como yo esperaba".
+# The old check demanded " T opus_decoder_create" and said NO on all nine,
+# with libopus.a perfectly well built. A "not there" that really said
+# "not there the way I expected".
 #
-# Lo curioso es que la sonda de audio SI lo hacia bien --filtraba por
-# " T | D | B "-- y lo tenia delante en su salida: audioInit salia junto a
-# __audioInit. Estaba escrito y no lo mire.
+# The funny thing is that the audio probe DID do it right --it filtered on
+# " T | D | B "-- and had it in front of it in its own output: audioInit
+# came out next to __audioInit. It was written down and I did not look.
 #
-# Ahora se compara el NOMBRE, con o sin punto delante, y si falla se
-# ensena lo que nm dice de verdad en vez de dejarlo en un NO a secas.
+# Now the NAME is compared, with or without a leading dot, and if it fails
+# it shows what nm really says instead of leaving it at a bare NO.
 falta=0
 for s in opus_decoder_create opus_decoder_destroy opus_decode \
          opus_decode_float opus_decoder_ctl opus_packet_get_nb_channels \
@@ -437,10 +442,10 @@ for s in opus_decoder_create opus_decoder_destroy opus_decode \
          opus_strerror; do
 	if $NM --defined-only "$OBRAS/lib/libopus.a" 2>/dev/null |
 	   awk '{print $NF}' | grep -Eqx "\.?$s"; then
-		echo "   $s ... SI"
+		echo "   $s ... YES"
 	else
 		echo "   $s ... NO  <<<<"
-		echo "      lo que nm dice de ese nombre:"
+		echo "      what nm says about that name:"
 		$NM --defined-only "$OBRAS/lib/libopus.a" 2>/dev/null |
 			grep -- "$s" | head -4 | sed 's/^/        /'
 		falta=1
@@ -449,19 +454,19 @@ done
 
 if [ "$falta" = "1" ]; then
 	echo
-	echo "!! faltan funciones que aud.c necesita. NO se instala."
-	echo "   La biblioteca a medias se queda en $OBRAS para mirarla."
+	echo "!! functions aud.c needs are missing. NOT installing."
+	echo "   The half-built library stays in $OBRAS so you can look at it."
 	exit 1
 fi
 
 echo
-echo " simbolos SIN RESOLVER que no sean de libc:"
-echo " (si aqui sale algo raro, opus espera algo del sistema que la"
-echo "  consola no tiene, y es mejor verlo ahora que entre cien"
-echo "  errores de enlace que no dicen nada)"
-# $NF y no $2, y quitando el punto de delante: por lo mismo de arriba, en
-# ELFv1 un simbolo de funcion puede venir como ".foo". Y fuera las lineas
-# de cabecera de miembro del archivo, que acaban en ":".
+echo " UNRESOLVED symbols that are not from libc:"
+echo " (if something odd shows up here, opus expects something from the"
+echo "  system that the console does not have, and it is better to see it"
+echo "  now than among a hundred link errors that say nothing)"
+# $NF and not $2, and stripping the leading dot: for the same reason as
+# above, in ELFv1 a function symbol can come through as ".foo". And out go
+# the archive member header lines, which end in ":".
 $NM --undefined-only "$OBRAS/lib/libopus.a" 2>/dev/null |
 	awk '{ n = $NF; sub(/^\./, "", n); print n }' | sort -u |
 	grep -v '^$' | grep -v ':$' |
@@ -471,20 +476,20 @@ $NM --undefined-only "$OBRAS/lib/libopus.a" 2>/dev/null |
 	grep -Ev '^(celt_|silk_|opus_|_?_?ec_|clt_|comb_|deemphasis|resampler)' |
 	sed 's/^/   /'
 
-# Y que el punto fijo esta de verdad puesto. Si FIXED_POINT no hubiera
-# llegado, opus compilaria igual en flotante y nadie se enteraria hasta
-# medir el consumo en la consola.
+# And that fixed point really is switched on. If FIXED_POINT had not got
+# through, opus would compile just the same in floating point and nobody
+# would find out until measuring the cost on the console.
 echo
 if $NM --defined-only "$OBRAS/lib/libopus.a" 2>/dev/null |
    grep -q "silk_.*_FIX"; then
-	echo " punto fijo ... SI (hay simbolos silk_*_FIX)"
+	echo " fixed point ... YES (there are silk_*_FIX symbols)"
 else
-	echo " punto fijo ... NO  <<<<"
-	echo "   FIXED_POINT no ha llegado al compilador. Compila igual, en"
-	echo "   coma flotante, y consume mas. Mira el -I del config.h."
+	echo " fixed point ... NO  <<<<"
+	echo "   FIXED_POINT has not reached the compiler. It compiles just"
+	echo "   the same, in float, and costs more. Check the -I of config.h."
 fi
 
-# --- instalar ---------------------------------------------------------
+# --- install ----------------------------------------------------------
 
 rm -rf "$OUT"
 mv "$OBRAS" "$OUT"
@@ -493,11 +498,11 @@ rm -rf "$OUT/obj"
 
 echo
 echo "=============================================================="
-echo " listo:  $OUT"
+echo " done:  $OUT"
 echo "   $OUT/lib/libopus.a       $(du -h "$OUT/lib/libopus.a" | cut -f1)"
 echo "   $OUT/include/opus/"
 echo
-echo " El Makefile ya tiene que estar apuntando ahi. Si no:"
+echo " The Makefile should already be pointing there. If not:"
 echo "   LIBDIRS += -L$OUT/lib"
 echo "   INCLUDE += -I$OUT/include"
 echo "   LIBS    += -lopus"

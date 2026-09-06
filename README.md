@@ -95,19 +95,6 @@ make pkg      # installable gr33n.pkg
 make run      # ps3load over the network
 ```
 
-### 4. Tests
-
-```sh
-sh t/correr.sh          # all 22
-sh t/correr.sh audio    # just one
-```
-
-They run on a PC, with an ordinary gcc, under ASan and UBSan. They test the arithmetic: RTP reordering, the PCM ring, pad mapping, NAL slicing, message parsing. None of that needs a PS3.
-
-Passing does not mean GR33N works — the decoder, the RSX and lv2's network stack are only testable on real hardware. If something breaks, it isn't this.
-
-They exist for a reason. The PCM ring in `aud.c` was sized at 8192 pairs, which with an Opus frame of up to 5760 left about 50 ms usable for a 160 ms cushion. The audio would never have started, and nothing was broken: every piece did its job and the result was silence. That doesn't show up on a read. This test caught it on the first run, before anything was compiled for the console.
-
 ## Repository layout
 
 ```

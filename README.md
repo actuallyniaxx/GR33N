@@ -134,8 +134,12 @@ Full third-party licences
 [PSL1GHT](https://github.com/ps3dev/PSL1GHT)) are in
 [CREDITS.md](CREDITS.md).
 
+### AI assistance
+
+[![Claude](https://img.shields.io/badge/claude-%23D97757.svg?style=for-the-badge&logo=claude&logoColor=white)](http://claude.com/) (Anthropic) was used extensively as a development and research assistant during the creation of GR33N, including code review, log analysis, debugging, refactoring, technical research, brainstorming, and writing parts of the code. Final integration, testing, verification, and technical decisions were made by the author.
+
 GR33N is an independent homebrew project and is not affiliated with or endorsed by Microsoft, Xbox, Sony, or PlayStation.
 
 ## License
 
-GR33N is licensed under the [GNU General Public License version 3](LICENSE).
+[![gnu](https://img.shields.io/badge/gnu-%23A42E2B.svg?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)  GR33N is licensed under the [GNU General Public License version 3](LICENSE).

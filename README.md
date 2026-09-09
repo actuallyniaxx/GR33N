@@ -118,6 +118,12 @@ GR33N wouldn't exist without two projects that came first:
 
 [green-vita](https://github.com/Day-OS/green-vita), by Day-OS — the PS Vita one, which is where the idea that this would fit on an old Sony console came from.
 
+And I also would like to mention:
+
+[PS3-Moonlight](https://github.com/Cruslan/PS3-Moonlight), by Cruslan — a valuable technical reference for PS3-specific implementation details and techniques used while developing GR33N.
+
+[Cell Stream](https://github.com/mohasi/ps3-dev/releases), by mohasi — another valuable technical reference for PS3 streaming and console-specific implementation details used while developing GR33N.
+
 Full third-party licences
 ([libpeer](https://github.com/sepfy/libpeer),
 [usrsctp](https://github.com/sctplab/usrsctp),
@@ -128,8 +134,12 @@ Full third-party licences
 [PSL1GHT](https://github.com/ps3dev/PSL1GHT)) are in
 [CREDITS.md](CREDITS.md).
 
+### AI assistance
+
+[![Claude](https://img.shields.io/badge/claude-%23D97757.svg?style=for-the-badge&logo=claude&logoColor=white)](http://claude.com/) (Anthropic) was used extensively as a development and research assistant during the creation of GR33N, including code review, log analysis, debugging, refactoring, technical research, brainstorming, and writing parts of the code. Final integration, testing, verification, and technical decisions were made by the author.
+
 GR33N is an independent homebrew project and is not affiliated with or endorsed by Microsoft, Xbox, Sony, or PlayStation.
 
 ## License
 
-GR33N is licensed under the [GNU General Public License version 3](LICENSE).
+[![gnu](https://img.shields.io/badge/gnu-%23A42E2B.svg?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)  GR33N is licensed under the [GNU General Public License version 3](LICENSE).

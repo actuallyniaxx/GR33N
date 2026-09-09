@@ -86,10 +86,46 @@ would fall behind on the first new version.
 the PS Vita. None of its code is used, but it's what made it clear this
 would fit on an old Sony console.
 
+## PS3-Moonlight — technical reference
+
+<https://github.com/Cruslan/PS3-Moonlight>, by Cruslan.
+
+Used as a technical reference during the development of GR33N for
+PS3-specific implementation details and techniques. In particular, it was
+useful for understanding existing approaches to PS3 hardware video
+decoding, RSX rendering, audio handling, PS3 input/UI and related
+console-specific implementation details.
+
+This is a reference/learning resource; GR33N is a separate project.
+
+## Cell Stream — technical reference
+
+<https://github.com/mohasi/ps3-dev/releases>, by mohasi.
+
+The **Cell Stream** project was another useful technical reference during
+development, particularly for PS3 streaming, client/server communication,
+input handling and other console-specific implementation details.
+
+This is a reference/learning resource; GR33N is a separate project.
+
 ## PSL1GHT
 
 <https://github.com/ps3dev/PSL1GHT>. The open PS3 SDK all of this is built
 on.
+
+## AI-assisted development
+
+**Claude (Anthropic)** was used throughout the development of
+GR33N as a coding and research assistant.
+
+Its use included code review, log analysis, debugging, code cleanup and
+refactoring, technical research, brainstorming and design suggestions, and
+writing or modifying portions of the code.
+
+GR33N is therefore **not presented as a project written entirely manually
+by its author**. The project was developed iteratively with AI assistance,
+with the author responsible for integrating, testing and verifying the
+resulting implementation and making the final technical decisions.
 
 ---
 

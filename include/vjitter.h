@@ -120,7 +120,22 @@ void vjRecibe(vjBuf *v, const u8 *rtp, size_t len, u64 ahora_ms,
               void *ud, int *pedir_clave);
 
 /* Para el informe de recepcion de RTCP. Devuelve 0 si todavia no hay
- * nada que contar. */
+ * nada que contar.
+ *
+ * OJO: A DIA DE HOY NADIE LA LLAMA.
+ *
+ * Se escribio en agosto para mandar informes de recepcion, y se quedo sin
+ * conectar. Eso significa que GR33N calcula cuantos paquetes pierde y se
+ * lo guarda para si: xCloud no se entera nunca de como va la cosa por
+ * aqui, y por tanto no tiene con que decidir bajar la calidad.
+ *
+ * Se deja porque el codigo es correcto y hara falta, pero se deja DICHO,
+ * que es lo que faltaba: una funcion muda con pinta de estar en uso es
+ * peor que no tenerla. Costo un mes darse cuenta.
+ *
+ * Le falta el jitter de llegada (RFC 3550 6.4.1) para poder montar un RR
+ * completo. Informar jitter cero seria decirle al emisor que el enlace va
+ * fino justo cuando no lo va. */
 int vjStatsRtcp(vjBuf *v, u8 *fraccion_perdida, u32 *perdidos,
                 u32 *mayor_seq);
 

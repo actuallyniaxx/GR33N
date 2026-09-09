@@ -9,7 +9,7 @@
 #include <ppu-types.h>
 
 #define GR33N_NAME     "GR33N"
-#define GR33N_VERSION  "1.0.0"
+#define GR33N_VERSION  "1.0.1"
 
 /* Superficie de trabajo: el buffer ARGB8888 donde acabara el frame
  * decodificado cuando exista decodificador. De momento la rellenamos a

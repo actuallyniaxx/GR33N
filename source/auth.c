@@ -1379,15 +1379,55 @@ static void auth_thread(void *arg)
 			continue;
 		}
 
+		/* LA PRIORIDAD DE TLS SE COGE AQUI, EN LA LLAMADA.
+		 *
+		 * MEDIDO, no supuesto. En el log del 5 de septiembre, en el
+		 * mismo milisegundo:
+		 *
+		 *   [auth] 1/4 el servidor roto el token de refresco, guardado
+		 *   [cat]  pidiendo datos de 6 titulos a catalog.gamepass.com
+		 *   [auth] FALLO: 2/4 sin respuesta de user.auth.xboxlive.com
+		 *
+		 * net_tls tiene UN turno. El catalogo lo cogio justo entre el
+		 * paso 1 y el 2, y la cadena de auth no reintenta: se cae
+		 * entera y la aplicacion arranca sin sesion. El sintoma es
+		 * "Cargando perfil" para siempre y "no hay sesion de xCloud"
+		 * al abrir un juego. Se arregla reiniciando, que es lo que
+		 * nadie deberia tener que hacer.
+		 *
+		 * catalog.c ya consulta tlsHeld() en sus dos caminos --el lote
+		 * de la tienda y la descarga de caratulas-- asi que con pedir
+		 * la prioridad basta para que se aparte solo. El mecanismo es
+		 * el mismo que usa session.c para que abrir una partida no se
+		 * quede sin turno, y alli ya esta probado.
+		 *
+		 * VA EN LA LLAMADA Y NO DENTRO de run_profile/run_xcloud a
+		 * proposito: entre las dos suman siete `return`, y una
+		 * prioridad que hay que acordarse de soltar en siete sitios es
+		 * una prioridad que un dia se queda puesta y deja el catalogo
+		 * mudo para siempre. Aqui lo garantiza la estructura. Es lo
+		 * mismo que dice el comentario de step_reap en session.c.
+		 *
+		 * run_flow NO se envuelve, y tampoco es un olvido: el flujo del
+		 * codigo de dispositivo se pasa MINUTOS esperando a que alguien
+		 * teclee el codigo en el movil, preguntando cada cinco
+		 * segundos. Apartar el catalogo todo ese rato seria cambiar un
+		 * fallo por una biblioteca que no carga nunca. Y ademas no le
+		 * hace falta: poll_once se reintenta solo al siguiente
+		 * intervalo, que es justo lo que a esta cadena le falta. */
 		if (prof_req) {
 			prof_req = 0;
+			tlsHold(1);
 			run_profile();
+			tlsHold(0);
 			continue;
 		}
 
 		if (xc_req) {
 			xc_req = 0;
+			tlsHold(1);
 			run_xcloud();
+			tlsHold(0);
 			continue;
 		}
 		usleep(20000);

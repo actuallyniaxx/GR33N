@@ -13,6 +13,8 @@
 #include <sys/thread.h>
 #include <sys/mutex.h>
 #include <net/net.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <lv2/system.h>
 
 #include "mbedtls/ssl.h"

@@ -455,13 +455,21 @@ void linkLog(const char *fmt, ...)
 	va_list ap;
 	int n;
 
-	if (sock < 0) return;
-
 	va_start(ap, fmt);
 	n = vsnprintf(text, sizeof(text), fmt, ap);
 	va_end(ap);
 
 	if (n <= 0) return;
+
+	{
+		FILE *flog = fopen("/dev_hdd0/tmp/gr33n.log", "a");
+		if (flog) {
+			fprintf(flog, "%s\n", text);
+			fclose(flog);
+		}
+	}
+
+	if (sock < 0) return;
 
 	LOCK();
 

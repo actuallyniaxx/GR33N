@@ -325,6 +325,21 @@ static int set_exit_combo = 0;  /* como se sale de un stream */
  * no puedan pisarse entre si es lo minimo. */
 static int set_quit_app   = 0;
 
+#define RES_OPTS_N 3
+static const char *res_opts[RES_OPTS_N] = {
+	"480p (Fluido / Wi-Fi)",
+	"720p (Recomendado)",
+	"1080p (Alta definicion)"
+};
+static int set_stream_res = 1;  /* 0=480p, 1=720p, 2=1080p */
+
+#define FPS_OPTS_N 2
+static const char *fps_opts[FPS_OPTS_N] = {
+	"30 FPS (Estable Wi-Fi)",
+	"60 FPS (Original)"
+};
+static int set_stream_fps = 1;  /* 0=30fps, 1=60fps */
+
 /* Un juego en marcha NO es el menu con una imagen encima.
  *
  * La primera version pintaba el video sobre el menu y dejaba a uiUpdate
@@ -580,7 +595,10 @@ static void aplicar_idioma(void)
 	 *
 	 * set_juego_cod vacio = nunca lo ha tocado. */
 	if (set_juego_cod[0] == '\0') {
-		int i = xclocPorCodigo(set_idioma == IDIOMA_EN ? "en-US" : "es-ES");
+		const char *def_loc = "es-ES";
+		if (set_idioma == IDIOMA_EN) def_loc = "en-US";
+		else if (set_idioma == IDIOMA_PT) def_loc = "pt-BR";
+		int i = xclocPorCodigo(def_loc);
 		if (i >= 0) set_juego_loc = i;
 	}
 
@@ -759,19 +777,35 @@ static const char *ping_status(void)
 /* 1 si el mando esta haciendo la combinacion elegida ahora mismo. */
 static int combo_hecho(const gr33nPad *pad)
 {
+	static int hold_count = 0;
 	int i = (set_exit_combo >= 0 && set_exit_combo < COMBOS_N)
 	        ? set_exit_combo : 0;
 	u32 mantener = combo_btn[i].mantener;
 	u32 pulsar   = combo_btn[i].pulsar ? combo_btn[i].pulsar : uiBtnBack();
+	u32 combo_mask = mantener | pulsar;
+	u32 sel_start  = GR33N_BTN_SELECT | GR33N_BTN_START;
 
-	/* Sin modificador no hay combinacion. Esto no deberia pasar nunca --
-	 * las cuatro lo tienen-- pero si alguna vez pasara, lo de arriba
-	 * seria "(held & 0) == 0", que es SIEMPRE cierto: saldria del juego
-	 * con un boton suelto. Un fallo asi no se ve leyendo la tabla. */
-	if (mantener == 0) return 0;
+	/* Flanco directo: mantener modificador y pulsar el boton de salida */
+	if (mantener && (pad->held & mantener) == mantener && (pad->pressed & pulsar)) {
+		hold_count = 0;
+		linkLog("[ui] atajo de salida activado (flanco)");
+		return 1;
+	}
 
-	return (pad->held & mantener) == mantener &&
-	       (pad->pressed & pulsar) != 0;
+	/* Mantener presionados ambos botones (~300ms, 18 frames a 60fps) */
+	if ((combo_mask && (pad->held & combo_mask) == combo_mask) ||
+	    ((pad->held & sel_start) == sel_start)) {
+		hold_count++;
+		if (hold_count >= 18) {
+			hold_count = 0;
+			linkLog("[ui] atajo de salida activado (mantenido)");
+			return 1;
+		}
+	} else {
+		hold_count = 0;
+	}
+
+	return 0;
 }
 
 static const uiSetting settings[] = {
@@ -881,6 +915,32 @@ static const uiSetting settings[] = {
 		"measurements per region and the best one wins, because network "
 		"noise only ever adds.",
 		SET_ACTION, &set_ping, 0, 0, 0, NULL, 0, ping_status, 0
+	},
+	{
+		"Resolucion de streaming",
+		"Stream resolution",
+		"Resolucion del video que manda xCloud. 480p consume mucho menos "
+		"ancho de banda y es ideal para conexiones Wi-Fi con interferencias; "
+		"720p es el estandar optimo en PS3; 1080p ofrece la maxima nitidez. "
+		"Se aplica a la proxima partida.",
+		"Streaming resolution requested from xCloud. 480p uses much less "
+		"bandwidth and is ideal for Wi-Fi; 720p is the sweet spot on PS3; "
+		"1080p provides maximum clarity. Applies to your next game session.",
+		SET_CHOICE, &set_stream_res, 0, RES_OPTS_N - 1, 1,
+		res_opts, RES_OPTS_N, NULL, 0
+	},
+	{
+		"Fotogramas por segundo (FPS)",
+		"Stream framerate (FPS)",
+		"Tasa de cuadros por segundo del stream. 30 FPS reduce el trafico "
+		"UDP a la mitad y alivia el decodificador, garantizando fluidez "
+		"total sin tirones en Wi-Fi. 60 FPS ofrece maxima suavidad. "
+		"Se aplica a la proxima partida.",
+		"Stream frame rate. 30 FPS halves UDP network packet rate and "
+		"decoder load, preventing drops and stutter on Wi-Fi. 60 FPS "
+		"provides original smoothness. Applies to your next game session.",
+		SET_CHOICE, &set_stream_fps, 0, FPS_OPTS_N - 1, 1,
+		fps_opts, FPS_OPTS_N, NULL, 0
 	},
 	{
 		"Mostrar juegos no disponibles",
@@ -1598,7 +1658,9 @@ static const struct { const char *key; int *value; } persisted[] = {
 	{ "hud_scale", &set_hud_scale },
 	{ "hud_pos",   &set_hud_pos   },
 	{ "salir_combo", &set_exit_combo },
-	{ "salir_app",   &set_quit_app   }
+	{ "salir_app",   &set_quit_app   },
+	{ "stream_res",  &set_stream_res },
+	{ "stream_fps",  &set_stream_fps }
 };
 #define PERSISTED_N ((int)(sizeof(persisted)/sizeof(persisted[0])))
 
@@ -1650,7 +1712,13 @@ static void clamp_settings(void)
 
 void uiSetLive(int on)
 {
-	if (!on && live_on) live_exit = 0;   /* al salir, sin arrastres */
+	if (on && !live_on) {
+		stream_entered = frame_counter;
+	}
+	if (!on && live_on) {
+		live_exit = 0;   /* al salir, sin arrastres */
+		in_ficha = 0;    /* volver directo a la cuadricula */
+	}
 	live_on = on ? 1 : 0;
 }
 
@@ -2261,19 +2329,22 @@ static void draw_grid(gr33nSurface *s)
 		 * biblioteca" en Favoritos, cuando el catalogo lleva rato
 		 * cargado, es sencillamente falso. */
 		if (tab == TAB_FAVS && ci->state == CAT_OK)
-			msg = "Todavia no has marcado ningun favorito. Triangulo "
-			      "sobre un juego.";
+			msg = TR("Todavia no has marcado ningun favorito. Triangulo "
+			         "sobre un juego.",
+			         "No favourites marked yet. Press Triangle on a game.");
 		else if (genre_sel > 0 && ci->state == CAT_OK)
-			msg = "Ningun juego con ese filtro. Cuadrado para cambiarlo.";
+			msg = TR("Ningun juego con ese filtro. Cuadrado para cambiarlo.",
+			         "No games with this filter. Press Square to change it.");
 		else if (ci->state == CAT_FAILED)
 			msg = ci->err;
 		else if (ci->state == CAT_OK)
 			msg = TR("Ningun juego disponible con tu suscripcion.",
 			         "No games available with your subscription.");
 		else if (authHaveToken())
-			msg = "Cargando biblioteca...";
+			msg = TR("Cargando biblioteca...", "Loading library...");
 		else
-			msg = "Inicia sesion en Ajustes para ver tus juegos.";
+			msg = TR("Inicia sesion en Ajustes para ver tus juegos.",
+			         "Sign in under Settings to see your games.");
 
 		/* Sin nada que enseñar no hay nada cerca. Si no se dice, la cache
 		 * sigue protegiendo la pagina de la ultima vez. */
@@ -2649,7 +2720,8 @@ static void draw_library(gr33nSurface *s)
 		         TR("Sin juegos", "No games"));
 		textWrap(s, LIST_X + 24, CONTENT_Y + 60, 2, COL_TEXT_DIM,
 		         LIST_W - 48, 26, 8,
-		         "No hay ningun juego disponible para lanzar.");
+		         TR("No hay ningun juego disponible para lanzar.",
+		            "No games available to launch."));
 	}
 
 	/* Se cuenta por filas visibles, no por indice absoluto. Aparte de
@@ -2679,7 +2751,7 @@ static void draw_library(gr33nSurface *s)
 	gfxFillRect(s, DET_X, CONTENT_Y, DET_W, CONTENT_H, COL_PANEL);
 
 	if (catalog_n == 0) {
-		const char *msg = "Nada que mostrar";
+		const char *msg = TR("Nada que mostrar", "Nothing to display");
 		textDraw(s, DET_X + (DET_W - textWidth(3, msg)) / 2,
 		         CONTENT_Y + CONTENT_H / 2 - 10, 3, COL_TEXT_DIM, msg);
 		return;
@@ -2817,7 +2889,7 @@ static void draw_settings(gr33nSurface *s)
 			 * fotogramas de por medio. Leer st->options[idx] con el
 			 * indice de la lista anterior es leer fuera. */
 			if (idx < 0 || idx >= opts_n(st)) idx = 0;
-			opt = st->options[idx] ? st->options[idx] : "?";
+			opt = st->options[idx] ? tr(st->options[idx], NULL) : "?";
 			w = textWidth(2, opt);
 
 			/* La LATENCIA es del selector de servidor y de nadie mas.
@@ -2972,10 +3044,10 @@ void uiDraw(gr33nSurface *s)
 
 void uiDrawStreamHint(gr33nSurface *s)
 {
-	char msg[48];
+	char msg[64];
 	int tw, bw;
 
-	if (mode != UI_STREAM) return;
+	if (!live_on && mode != UI_STREAM) return;
 	if (frame_counter - stream_entered > HINT_FRAMES) return;
 
 	/* Lo que pone en pantalla sale de la MISMA tabla que decide si se
@@ -2986,10 +3058,14 @@ void uiDrawStreamHint(gr33nSurface *s)
 		        ? set_exit_combo : 0;
 
 		if (combo_btn[i].pulsar == 0)
-			snprintf(msg, sizeof(msg), "SELECT + %s para volver",
+			snprintf(msg, sizeof(msg),
+			         TR("SELECT + %s / SELECT + START para volver",
+			            "SELECT + %s / SELECT + START to go back"),
 			         back_glyph());
 		else
-			snprintf(msg, sizeof(msg), TR("%s para volver", "%s to go back"),
+			snprintf(msg, sizeof(msg),
+			         TR("%s / SELECT + START para volver",
+			            "%s / SELECT + START to go back"),
 			         combo_name[i]);
 	}
 
@@ -2999,4 +3075,46 @@ void uiDrawStreamHint(gr33nSurface *s)
 	gfxFillRect(s, (W - bw) / 2, H - 72, bw, 40, COL_BAR);
 	gfxRect(s, (W - bw) / 2, H - 72, bw, 40, 2, COL_GREEN_DIM);
 	textDraw(s, (W - tw) / 2, H - 72 + 13, 2, COL_TEXT, msg);
+}
+
+int uiStreamWidth(void)
+{
+	switch (set_stream_res) {
+	case 0: return 854;
+	case 2: return 1920;
+	default: return 1280;
+	}
+}
+
+int uiStreamHeight(void)
+{
+	switch (set_stream_res) {
+	case 0: return 480;
+	case 2: return 1080;
+	default: return 720;
+	}
+}
+
+int uiStreamKbps(void)
+{
+	int is30 = (set_stream_fps == 0);
+	switch (set_stream_res) {
+	case 0: return is30 ? 3000 : 5000;
+	case 2: return is30 ? 10000 : 15000;
+	default: return is30 ? 6000 : 10000;
+	}
+}
+
+int uiStreamFps(void)
+{
+	return (set_stream_fps == 0) ? 30 : 60;
+}
+
+const char *uiStreamResAlias(void)
+{
+	switch (set_stream_res) {
+	case 0: return "480";
+	case 2: return "1080";
+	default: return "720";
+	}
 }

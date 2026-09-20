@@ -54,13 +54,14 @@
 typedef enum {
 	IDIOMA_ES = 0,
 	IDIOMA_EN,
+	IDIOMA_PT,
 	IDIOMA_N
 } gr33nIdioma;
 
 void        i18nSet(gr33nIdioma i);
 gr33nIdioma i18nGet(void);
 
-/* El codigo corto que se guarda en disco: "es", "en".
+/* El codigo corto que se guarda en disco: "es", "en", "pt".
  *
  * Se guarda el CODIGO y no el numero, por lo mismo que la region: un
  * indice depende del orden de una lista, y el dia que se meta un idioma
@@ -70,14 +71,15 @@ gr33nIdioma i18nPorCodigo(const char *cod);
 
 /* Como se llama el idioma, EN SU PROPIO IDIOMA.
  *
- * "Espanol" y "English", no "Espanol" e "Ingles". Quien tiene la interfaz
+ * "Español", "English" y "Português". Quien tiene la interfaz
  * en un idioma que no entiende necesita reconocer el suyo en la lista, y
  * para eso el unico nombre que sirve es el propio. Es lo que hacen todos
  * los sistemas que se toman esto en serio. */
 const char *i18nNombre(gr33nIdioma i);
 
-/* Elige. Con en NULL o vacio devuelve es. */
+/* Elige segun el idioma activo (es, en, pt). */
 const char *tr(const char *es, const char *en);
+const char *i18nLookupPt(const char *es);
 
 #define TR(es_, en_)  tr((es_), (en_))
 

@@ -1,0 +1,71 @@
+name: Build GR33N PS3 PKG
+
+on:
+  push:
+    branches: [ '**' ]
+  workflow_dispatch:
+
+jobs:
+  build_pkg:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo add-apt-repository universe -y || true
+          sudo apt-get update
+          sudo apt-get install -y git make curl python2.7 python3 texinfo bison flex
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2 || true
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python || true
+
+      - name: Install NVIDIA Cg Toolkit
+        run: |
+          curl -sL "https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz" | sudo tar -C / -xvz
+          echo "/usr/lib64" | sudo tee /etc/ld.so.conf.d/cg.conf
+          sudo ldconfig
+          echo "LD_LIBRARY_PATH=/usr/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
+      - name: Download PSL1GHT Precompiled Toolchain
+        run: |
+          curl -sL https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz | tar xvz -C ./
+          echo "PS3DEV=${GITHUB_WORKSPACE}/ps3dev" >> $GITHUB_ENV
+          echo "PSL1GHT=${GITHUB_WORKSPACE}/ps3dev" >> $GITHUB_ENV
+          echo "${GITHUB_WORKSPACE}/ps3dev/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/ps3dev/ppu/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/ps3dev/spu/bin" >> $GITHUB_PATH
+          # Fix typo in PSL1GHT sys/atomic.h (newv -> new)
+          sed -i 's/newv/new/g' ${GITHUB_WORKSPACE}/ps3dev/ppu/include/sys/atomic.h
+
+      - name: Install pthread-emb library
+        run: |
+          curl -sL https://github.com/bucanero/pthread-emb-ps3/tarball/master | tar xvz -C ./
+          cd bucanero-pthread-emb-ps3-*/platform/psl1ght
+          make install
+          mkdir -p ${GITHUB_WORKSPACE}/ps3dev/ppu/include ${GITHUB_WORKSPACE}/ps3dev/ppu/lib
+          cp -R ../../include/* ${GITHUB_WORKSPACE}/ps3dev/ppu/include/ || true
+          cp libpthread.a ${GITHUB_WORKSPACE}/ps3dev/ppu/lib/ || true
+
+      - name: Build dependencies
+        run: |
+          chmod +x deps/*.sh
+          cd deps
+          ./build-mbedtls.sh
+          ./build-libsrtp.sh
+          ./build-usrsctp.sh
+          ./build-libpeer.sh
+          ./build-opus.sh
+          cd ..
+
+      - name: Compile PKG
+        run: |
+          make pkg
+
+      - name: Upload PKG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gr33n-wifi-fix-pkg
+          path: |
+            gr33n.pkg
+            gr33n.self

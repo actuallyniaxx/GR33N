@@ -129,4 +129,11 @@ void uiLoadSettings(void);
 void uiSaveSettings(void);
 int  uiSettingsDirty(void);
 
+/* Ajustes de streaming (resolucion y fps) */
+int         uiStreamWidth(void);
+int         uiStreamHeight(void);
+int         uiStreamKbps(void);
+int         uiStreamFps(void);
+const char *uiStreamResAlias(void);
+
 #endif /* GR33N_UI_H */

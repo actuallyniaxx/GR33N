@@ -235,7 +235,12 @@ static vjFrame *busca_o_crea(vjBuf *v, u32 ts, u64 ahora_ms)
 
 	/* Mas viejo que lo ultimo que ya se solto: llega tarde. */
 	if (v->hay_ultimo && !ts_mas_nuevo(ts, v->ultimo_ts)) return NULL;
-	if (v->n_frames >= VJ_MAX_FRAMES) return NULL;
+	if (v->n_frames >= VJ_MAX_FRAMES) {
+		v->ultimo_ts = v->frames[0].ts;
+		v->hay_ultimo = 1;
+		quita_frame(v, 0);
+		v->st.tirados++;
+	}
 
 	/* En orden ascendente de marca de tiempo. */
 	for (i = 0; i < v->n_frames; i++)

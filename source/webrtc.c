@@ -885,6 +885,11 @@ static void secuencia_arranque(void)
 	char buf[1024];
 	u8 bin[XC_METADATA_LEN];
 	int i;
+	int ancho = uiStreamWidth();
+	int alto  = uiStreamHeight();
+	int kbps  = uiStreamKbps();
+	int fps   = uiStreamFps();
+	const char *alias = uiStreamResAlias();
 
 	wlog("HandshakeAck: mandando capacidades");
 
@@ -893,12 +898,11 @@ static void secuencia_arranque(void)
 	if (xcGamepadChanged(buf, sizeof(buf), 0, 1))
 		enviar_texto(SID_CONTROL, buf);
 
-	if (xcResolution(buf, sizeof(buf), "720"))
+	if (xcResolution(buf, sizeof(buf), alias))
 		enviar_texto(SID_CONTROL, buf);
 
 	for (i = 0; i < XC_STARTUP_N; i++)
-		if (xcStartup(buf, sizeof(buf), i, XC_ANCHO, XC_ALTO,
-		              XC_KBPS, XC_FPS))
+		if (xcStartup(buf, sizeof(buf), i, ancho, alto, kbps, fps))
 			enviar_texto(SID_MESSAGE, buf);
 
 	/* Los metadatos consumen numero de secuencia aunque sean lo primero
@@ -914,7 +918,7 @@ static void secuencia_arranque(void)
 	enviar_texto(SID_CONTROL, xcKeyframeRequested());
 
 	wlog("secuencia de arranque enviada (%dx%d @%d, %d kbps)",
-	     XC_ANCHO, XC_ALTO, XC_FPS, XC_KBPS);
+	     ancho, alto, fps, kbps);
 }
 
 /* --- los callbacks de libpeer ---------------------------------------- */

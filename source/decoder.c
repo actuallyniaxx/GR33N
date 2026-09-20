@@ -23,10 +23,8 @@
 #include "decoder.h"
 #include "copy.h"
 
-/* Nivel del bitstream x10. 31 = H.264 nivel 3.1, que cubre 720p30.
- * Para 720p60 haria falta 32 o 40. Determina la memoria que reserva el
- * decodificador, asi que no conviene pasarse por gusto. */
-#define DEC_PROFILE_LEVEL   31
+/* Nivel del bitstream x10. 42 = H.264 nivel 4.2, necesario para 720p60 y 1080p60. */
+#define DEC_PROFILE_LEVEL   42
 
 #define DEC_MAX_AUS         4096
 #define DEC_PIC_BYTES       (DEC_MAX_W * DEC_MAX_H * 4)
@@ -53,7 +51,7 @@
 #define DEC_FREE_RUN        1
 #define DEC_FRAME_US        33333       /* 30 fps, si DEC_FREE_RUN es 0 */
 
-#define DEC_PIC_TIMEOUT_US  2000000ull  /* dos segundos sin imagen = error */
+#define DEC_PIC_TIMEOUT_US  10000000ull /* diez segundos sin imagen = error */
 
 #define VDEC_PPU_PRIO       1000
 #define VDEC_PPU_STACK      (256 * 1024)
@@ -66,7 +64,7 @@
  * Cada vez que se entra en H264_DEBUG se prueba el siguiente de la lista y
  * se dice en el log. Tres entradas y hay tabla, sin recompilar ni cambiar
  * un numero a mano entre pruebas. */
-static const u32 spu_ladder[] = { 1, 2, 4 };
+static const u32 spu_ladder[] = { 4, 4, 4 };
 #define SPU_LADDER_N  ((int)(sizeof(spu_ladder)/sizeof(spu_ladder[0])))
 
 #define DEC_THREAD_PRIO     1001
@@ -115,7 +113,7 @@ static void *vdec_mem = NULL;
  * a proposito: asi NADA de lo que monte el reensamblado puede no caber
  * aqui. Una unidad recortada tiene forma de unidad y el decodificador la
  * intentaria. */
-#define DEC_LIVE_SLOTS   6
+#define DEC_LIVE_SLOTS   16
 #define DEC_LIVE_MAX     (512 * 1024)
 
 typedef struct {
@@ -166,6 +164,7 @@ static u64 out_seq = 0;
 
 static volatile int pic_ready = 0;   /* lo pone el callback de cellVdec */
 static volatile int seq_error = 0;
+static volatile u32 audone_events = 0;
 
 /* Marcas de tiempo de envio, en orden. El clip va sin frames B
  * (-bf 0 al codificarlo), asi que el orden de salida es el de entrada y
@@ -234,7 +233,7 @@ static volatile int stop_req = 0;
 /* Tres y se rinde. Si cellVdec se atasca tres veces seguidas no es un
  * hipo, es que algo va mal de verdad, y reabrir en bucle solo cambiaria
  * una imagen congelada por un parpadeo eterno. */
-#define DEC_REINTENTOS 3
+#define DEC_REINTENTOS 10
 
 /* Y la cuenta SE OLVIDA si el descodificador ha aguantado un buen rato.
  *
@@ -378,6 +377,8 @@ static u32 dec_callback(u32 h, u32 msgtype, u32 msgdata, u32 arg)
 		seq_error = 1;
 		break;
 	case VDEC_CALLBACK_AUDONE:
+		audone_events++;
+		break;
 	case VDEC_CALLBACK_SEQDONE:
 	default:
 		break;
@@ -461,11 +462,6 @@ static int consume_picture(void)
 	 * quedan corridas una posicion. */
 	if (pic->status == VDEC_PICTURE_SKIPPED) {
 		LOCK(); slots[sl].busy = 0; UNLOCK();
-		if (inflight) {
-			sub_tail = (sub_tail + 1) % DEC_INFLIGHT;
-			inflight--;
-			live_libera();
-		}
 		return 1;
 	}
 
@@ -506,11 +502,9 @@ static int consume_picture(void)
 	now = now_us();
 
 	t_submit = 0;
-	if (inflight) {
+	if (sub_head != sub_tail) {
 		t_submit = submit_t[sub_tail];
 		sub_tail = (sub_tail + 1) % DEC_INFLIGHT;
-		live_libera();
-		inflight--;
 	}
 
 	LOCK();
@@ -607,6 +601,7 @@ static void do_start(void)
 		live_w = live_r = live_f = 0;
 		live_q = live_v = 0;
 		live_drops = 0;
+		audone_events = 0;
 		au_stream = NULL;
 		au_stream_size = 0;
 		dlog("0/4 EN VIVO, %u ranuras de %u KB - con %u SPU%s",
@@ -709,6 +704,7 @@ static void dec_thread(void *arg)
 			atascos = 0;
 			t_ultimo_atasco = 0;
 			quiere_clave = 0;
+			audone_events = 0;
 			continue;
 		}
 
@@ -739,6 +735,13 @@ static void dec_thread(void *arg)
 			continue;
 		}
 
+		while (audone_events > 0) {
+			audone_events--;
+			if (inflight > 0) inflight--;
+			live_libera();
+			t_last_progress = now_us();
+		}
+
 		/* 1. Cosechar. Siempre, no solo cuando el callback avisa: una
 		 *    notificacion perdida con la tuberia llena seria un bloqueo
 		 *    permanente, y drenar en vacio cuesta una llamada. */
@@ -755,7 +758,12 @@ static void dec_thread(void *arg)
 
 		/* 2. Si la tuberia esta llena, no hay nada que enviar. */
 		if (inflight >= inflight_max) {
-			if (now_us() - t_last_progress > DEC_PIC_TIMEOUT_US) {
+			if (now_us() - t_last_progress > 500000ull &&
+			    now_us() - t_last_progress <= DEC_PIC_TIMEOUT_US) {
+				inflight = 0;
+				live_libera();
+				t_last_progress = now_us();
+			} else if (now_us() - t_last_progress > DEC_PIC_TIMEOUT_US) {
 				u64 ahora = now_us();
 
 				if (t_ultimo_atasco &&

@@ -1423,7 +1423,13 @@ int main(int argc, const char *argv[])
 		 * justo la senal que hacia falta. */
 		if (sesStatus()->state == SES_READY &&
 		    decStatus()->frames_decoded > 0) {
-			decTakePicture(s);
+			const decInfo *d = decStatus();
+			if (d->state == DEC_FAILED) {
+				draw_dec_message(s, GR33N_RGB(255, 80, 80),
+				                 "cellVdec fallo", d->err);
+			} else {
+				decTakePicture(s);
+			}
 			uiDrawStreamHint(s);
 		} else if (uiGetMode() == UI_STREAM) {
 			if (remote) {

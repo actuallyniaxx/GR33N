@@ -5,7 +5,7 @@
   La usan las dos rutas: 'make pkg' (via SFOXML en el Makefile) y
   deps/install-xmb.sh. Un solo fichero para que no puedan divergir.
 
-  TITLE y TITLE_ID los pisa la herramienta con --title y --appid desde el
+  TITLE y TITLE_ID los pisa la herramienta con title y appid desde el
   Makefile, asi que ahi lo que ponga da igual: manda el Makefile.
 
   CATEGORY es EL campo. Decide en que columna del XMB aparece la entrada,

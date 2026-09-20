@@ -48,10 +48,10 @@
  * predictiva entera y congelaba la imagen hasta el siguiente IDR. El
  * retraso solo se paga cuando el fotograma YA esta incompleto; los sanos
  * salen en el acto. */
-#define VJ_ESPERA_MS   200
+#define VJ_ESPERA_MS   380
 
-#define VJ_MAX_FRAMES   16      /* fotogramas a la vez */
-#define VJ_MAX_PKTS    512      /* deposito comun de paquetes */
+#define VJ_MAX_FRAMES   48      /* fotogramas a la vez (800ms a 60 fps) */
+#define VJ_MAX_PKTS    1024      /* deposito comun de paquetes */
 #define VJ_PKT_MAX    1500      /* lo mas grande que cabe en un datagrama */
 #define VJ_AU_MAX  (512 * 1024) /* una unidad de acceso: un IDR de 720p */
 

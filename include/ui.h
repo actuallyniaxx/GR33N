@@ -13,6 +13,7 @@
 
 #include <ppu-types.h>
 #include "video.h"
+#include "i18n.h"
 #include "input.h"
 
 typedef enum {
@@ -31,20 +32,27 @@ typedef enum {
 
 typedef struct {
 	const char *id;
-	const char *name;
-	const char *publisher;
-	const char *desc;
 
-	/* La version en ingles, cuando el texto es NUESTRO.
+	/* Los tres textos, cada uno con sus IDIOMA_N casillas en el orden del
+	 * enum de i18n.h. Una casilla vacia cae al castellano.
 	 *
-	 * Las entradas del catalogo dejan estos tres en NULL a proposito: su
-	 * texto viene de Microsoft y YA llega en el idioma que pedimos en la
-	 * peticion a la tienda. Traducirlo aqui seria traducir dos veces, y
-	 * peor. tr() con NULL devuelve el original, que es justo lo que hace
-	 * falta. */
-	const char *name_en;
-	const char *publisher_en;
-	const char *desc_en;
+	 * Se deja a proposito con una sola casilla llena en dos casos, y son
+	 * distintos:
+	 *
+	 *   - Los paneles de PRUEBAS. Es texto de desarrollo que solo sale
+	 *     con Debug puesto: habla de cellVdec, de generacion de claves
+	 *     RSA y de judder, y quien lo lee esta depurando, no jugando.
+	 *
+	 *   - Las entradas del CATALOGO. Su texto viene de Microsoft y YA
+	 *     llega en el idioma que pedimos en la peticion a la tienda.
+	 *     Traducirlo aqui seria traducirlo dos veces, y peor.
+	 *
+	 * Antes esto eran seis campos sueltos (name, publisher, desc y sus
+	 * tres _en). Con cinco idiomas habrian sido quince const char *
+	 * seguidos, que es pedirle a la vista que no se salte una. */
+	const char *name[IDIOMA_N];
+	const char *publisher[IDIOMA_N];
+	const char *desc[IDIOMA_N];
 
 	uiTitleKind kind;
 	u32 accent;

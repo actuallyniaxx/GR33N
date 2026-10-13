@@ -360,16 +360,35 @@ static void draw_dec_message(gr33nSurface *s, u32 color,
 /* TLS_DEBUG: la pantalla de la peticion                                 */
 /* --------------------------------------------------------------------- */
 
+/* Estos siete son de los que salen EN MITAD DEL LOGIN, y estaban sin
+ * traducir: quien ponia GR33N en ingles veia "Negociando TLS" justo en la
+ * pantalla donde mas te importa entender que esta pasando. */
 static const char *tls_state_name(tlsState st)
 {
 	switch (st) {
-	case TLS_RESOLVING:  return "Resolviendo el nombre";
-	case TLS_CONNECTING: return "Abriendo el socket";
-	case TLS_HANDSHAKE:  return "Negociando TLS";
-	case TLS_REQUEST:    return "Pidiendo el documento";
-	case TLS_DONE:       return "Listo";
-	case TLS_FAILED:     return "Fallo";
-	default:             return "En espera";
+	case TLS_RESOLVING:
+		return TR("Resolviendo el nombre", "Resolving the name",
+		          "Résolution du nom", "Risoluzione del nome",
+		          "Resolvendo o nome");
+	case TLS_CONNECTING:
+		return TR("Abriendo el socket", "Opening the socket",
+		          "Ouverture du socket", "Apertura del socket",
+		          "Abrindo o socket");
+	case TLS_HANDSHAKE:
+		return TR("Negociando TLS", "Negotiating TLS",
+		          "Négociation TLS", "Negoziazione TLS",
+		          "Negociando TLS");
+	case TLS_REQUEST:
+		return TR("Pidiendo el documento", "Requesting the document",
+		          "Demande du document", "Richiesta del documento",
+		          "Pedindo o documento");
+	case TLS_DONE:
+		return TR("Listo", "Done", "Terminé", "Fatto", "Pronto");
+	case TLS_FAILED:
+		return TR("Fallo", "Failed", "Échec", "Errore", "Falhou");
+	default:
+		return TR("En espera", "Waiting", "En attente", "In attesa",
+		          "Aguardando");
 	}
 }
 
@@ -504,7 +523,10 @@ static void draw_auth_screen(gr33nSurface *s)
 		 *
 		 * En el resto del proyecto el castellano va sin tildes por esto
 		 * mismo. Estas cuatro se habian colado. */
-		const char *tit = TR("Iniciar sesion", "Sign in");
+		const char *tit = TR("Iniciar sesion", "Sign in",
+		"Se connecter",
+		"Accedi",
+		"Entrar");
 
 		textDraw(s, (w - textWidth(4, tit)) / 2, h / 2 - 90, 4, accent, tit);
 		textWrap(s, w / 2 - 400, h / 2 - 20, 2, GR33N_RGB(190, 205, 200),
@@ -514,20 +536,32 @@ static void draw_auth_screen(gr33nSurface *s)
 		                  "Pulsa X para volver a entrar con otra cuenta.",
 		                  "There is already a session saved on this "
 		                  "console. Press X to sign in with a different "
-		                  "account.")
+		                  "account.",
+		"Une session est déjà enregistrée sur cette console. Appuie sur X pour te connecter avec un autre compte.",
+		"C'è già una sessione salvata su questa console. Premi X per accedere con un altro account.",
+		"Já existe uma sessão salva neste console. Aperte X para entrar com outra conta.")
 		             : TR("Pulsa X y la consola te dara un codigo corto "
 		                  "para escribir en el movil o en el PC.",
 		                  "Press X and the console will give you a short "
-		                  "code to type on your phone or PC."));
+		                  "code to type on your phone or PC.",
+		"Appuie sur X et la console te donnera un code court à saisir sur ton téléphone ou ton PC.",
+		"Premi X e la console ti darà un codice breve da digitare sul telefono o sul PC.",
+		"Aperte X e o console vai te dar um código curto para digitar no celular ou no PC."));
 		{
-			const char *b = TR("X  Empezar", "X  Start");
+			const char *b = TR("X  Empezar", "X  Start",
+		"X  Commencer",
+		"X  Inizia",
+		"X  Começar");
 			textDraw(s, (w - textWidth(3, b)) / 2, h / 2 + 130, 3, accent, b);
 		}
 		break;
 	}
 
 	case AUTH_REQUESTING: {
-		const char *t = TR("Pidiendo codigo...", "Requesting code...");
+		const char *t = TR("Pidiendo codigo...", "Requesting code...",
+		"Demande du code...",
+		"Richiesta del codice...",
+		"Pedindo o código...");
 		textDraw(s, (w - textWidth(4, t)) / 2, h / 2 - 20, 4, accent, t);
 		break;
 	}
@@ -537,14 +571,20 @@ static void draw_auth_screen(gr33nSurface *s)
 
 		textDraw(s, 100, y, 3, GR33N_RGB(190, 205, 200),
 		         TR("1.  Entra en esta direccion:",
-		            "1.  Go to this address:"));
+		            "1.  Go to this address:",
+		"1.  Va à cette adresse :",
+		"1.  Vai a questo indirizzo:",
+		"1.  Acesse este endereço:"));
 		y += 54;
 		textDraw(s, 140, y, 4, GR33N_RGB(255, 255, 255), a->verify_uri);
 		y += 80;
 
 		textDraw(s, 100, y, 3, GR33N_RGB(190, 205, 200),
 		         TR("2.  Escribe este codigo:",
-		            "2.  Type this code:"));
+		            "2.  Type this code:",
+		"2.  Saisis ce code :",
+		"2.  Digita questo codice:",
+		"2.  Digite este código:"));
 		y += 60;
 
 		/* El codigo, lo mas grande que quepa. Es lo unico que el usuario
@@ -559,7 +599,10 @@ static void draw_auth_screen(gr33nSurface *s)
 
 		snprintf(line, sizeof(line),
 		         TR("Esperando...   %u s de %u   %u consultas",
-		            "Waiting...   %u s of %u   %u polls"),
+		            "Waiting...   %u s of %u   %u polls",
+		"Attente...   %u s sur %u   %u requêtes",
+		"In attesa...   %u s di %u   %u richieste",
+		"Aguardando...   %u s de %u   %u consultas"),
 		         (unsigned)a->elapsed_s, (unsigned)a->expires_s,
 		         (unsigned)a->polls);
 		textDraw(s, 100, y, 2, GR33N_RGB(140, 160, 155), line);
@@ -569,7 +612,10 @@ static void draw_auth_screen(gr33nSurface *s)
 	}
 
 	case AUTH_OK: {
-		const char *t = TR("Sesion iniciada", "Signed in");
+		const char *t = TR("Sesion iniciada", "Signed in",
+		"Connecté",
+		"Accesso eseguito",
+		"Conectado");
 
 		textDraw(s, (w - textWidth(5, t)) / 2, h / 2 - 60, 5, accent, t);
 		textWrap(s, w / 2 - 400, h / 2 + 30, 2, GR33N_RGB(190, 205, 200),
@@ -577,13 +623,22 @@ static void draw_auth_screen(gr33nSurface *s)
 		         TR("El token queda guardado en la consola. En el proximo "
 		            "arranque no hara falta repetir esto.",
 		            "The token is saved on the console. Next time you "
-		            "start up you will not have to do this again."));
+		            "start up you will not have to do this again.",
+		"Le jeton reste enregistré sur la console. Au prochain démarrage, tu n'auras pas à recommencer.",
+		"Il token resta salvato sulla console. Al prossimo avvio non dovrai rifarlo.",
+		"O token fica salvo no console. Na próxima inicialização não será preciso repetir isto."));
 		break;
 	}
 
 	case AUTH_FAILED: {
-		const char *t = TR("No se pudo entrar", "Sign-in failed");
-		const char *b = TR("X  Reintentar", "X  Try again");
+		const char *t = TR("No se pudo entrar", "Sign-in failed",
+		"Échec de la connexion",
+		"Accesso non riuscito",
+		"Não foi possível entrar");
+		const char *b = TR("X  Reintentar", "X  Try again",
+		"X  Réessayer",
+		"X  Riprova",
+		"X  Tentar de novo");
 
 		textDraw(s, (w - textWidth(4, t)) / 2, h / 2 - 80, 4, accent, t);
 		textWrap(s, w / 2 - 420, h / 2 - 10, 2, GR33N_RGB(255, 170, 170),

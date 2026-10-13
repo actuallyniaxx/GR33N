@@ -1323,9 +1323,29 @@ static void run_profile(void)
 	prof.state = PROF_WORKING;
 	UNLOCK();
 
+	/* AQUI SE VOLVIA SIN DECIR NADA.
+	 *
+	 * Ponia PROF_NONE y return, sin una linea en el log. Y PROF_NONE es
+	 * TAMBIEN el estado de arranque --prof es static, o sea cero-- asi
+	 * que este fallo y "todavia no ha empezado" eran indistinguibles: el
+	 * mismo numero para dos cosas que no se parecen en nada.
+	 *
+	 * Ademas es una contradiccion en si misma. authHaveToken() dice que
+	 * SI hay token (por eso la barra pone "Cargando perfil") mientras
+	 * storeLoadToken() dice que no lo puede leer. Dos funciones
+	 * respondiendo distinto a la misma pregunta es de las cosas que mas
+	 * caro han salido en este proyecto, y esta llevaba escondida detras
+	 * de un "Cargando perfil..." eterno.
+	 *
+	 * Ahora es un fallo con nombre: se ve en la barra, se ve en el HUD y
+	 * queda en el log. Regla 3: una funcion que no puede contestar deja
+	 * constancia, aunque devuelva el mismo fallo de siempre. */
 	if (storeLoadToken(refresh, sizeof(refresh)) == 0) {
+		alog("!! hay token en disco pero storeLoadToken no lo lee");
 		LOCK();
-		prof.state = PROF_NONE;
+		prof.state = PROF_FAILED;
+		snprintf(prof.err, sizeof(prof.err),
+		         "hay un token guardado pero no se puede leer del disco");
 		UNLOCK();
 		return;
 	}
@@ -1543,6 +1563,29 @@ const authInfo *authStatus(void)
 /* Del valor en memoria. Se llama desde el hilo de dibujo, sesenta veces por
  * segundo: aqui no se toca el disco. */
 int authHaveToken(void) { return token_present; }
+
+/* SOLO el estado, sin copiar la estructura entera.
+ *
+ * authProfile() copia los ~950 bytes de xblProfile a un static COMPARTIDO
+ * y devuelve un puntero a el. Eso ya lo llama el hilo de dibujo dos veces
+ * por fotograma (el bucle y el HUD), y la barra superior lo llamaria dos
+ * mas -- una para medir el hueco y otra para pintar.
+ *
+ * El problema no es el coste, que es ridiculo, sino el static: quien
+ * guarda el puntero de una llamada y lo lee despues de otra se encuentra
+ * los datos cambiados debajo. Esta apuntado como pendiente desde hace
+ * meses; no se arregla aqui, pero tampoco se le echan dos usos mas
+ * encima por no escribir cuatro lineas. */
+profState authProfileState(void)
+{
+	profState s;
+
+	LOCK();
+	s = prof.state;
+	UNLOCK();
+
+	return s;
+}
 
 int authFetchProfile(void)
 {

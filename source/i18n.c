@@ -6,14 +6,17 @@
 
 static gr33nIdioma actual = IDIOMA_ES;
 
-/* Una sola tabla, con el codigo y el nombre juntos. No hay dos listas que
- * puedan descolocarse porque no hay dos listas. */
+/* Una sola tabla, generada de IDIOMA_LISTA. El codigo, el nombre y el
+ * idioma de juego de un idioma salen todos de su MISMA linea, asi que no
+ * hay dos listas que puedan descolocarse porque no hay dos listas. */
 static const struct {
 	const char *codigo;
 	const char *nombre;
+	const char *juego;
 } idiomas[IDIOMA_N] = {
-	{ "es", "Espanol" },   /* sin tilde: la fuente no la tiene */
-	{ "en", "English"  }
+#define X(e, c, n, l) { c, n, l },
+	IDIOMA_LISTA
+#undef X
 };
 
 void i18nSet(gr33nIdioma i)
@@ -35,6 +38,12 @@ const char *i18nNombre(gr33nIdioma i)
 	return idiomas[i].nombre;
 }
 
+const char *i18nJuegoPorDefecto(gr33nIdioma i)
+{
+	if (i < 0 || i >= IDIOMA_N) return idiomas[IDIOMA_ES].juego;
+	return idiomas[i].juego;
+}
+
 gr33nIdioma i18nPorCodigo(const char *cod)
 {
 	int i;
@@ -49,49 +58,60 @@ gr33nIdioma i18nPorCodigo(const char *cod)
 	return IDIOMA_ES;
 }
 
-const char *tr(const char *es, const char *en)
+/* La casilla del idioma actual, y si esta vacia, el castellano.
+ *
+ * Los dos NULL que se comprueban aqui no son paranoia de firma: v entero
+ * es NULL cuando una entrada del catalogo no trae texto nuestro (los
+ * nombres los pone Microsoft y YA vienen traducidos), y v[actual] es NULL
+ * en cada cadena que todavia no se ha traducido -- los paneles de Pruebas
+ * llevan los cuatro a NULL a proposito. Las dos cosas pasan ahora mismo,
+ * en varios sitios, a proposito. */
+const char *trPick(const char *const *v)
 {
-	if (actual == IDIOMA_EN && en != NULL && en[0] != '\0') return en;
-	return es;
+	if (v == NULL) return "";
+
+	if (actual >= 0 && actual < IDIOMA_N &&
+	    v[actual] != NULL && v[actual][0] != '\0')
+		return v[actual];
+
+	return (v[IDIOMA_ES] != NULL) ? v[IDIOMA_ES] : "";
 }
 
 /* --------------------------------------------------------------------- */
 /* El idioma de xCloud                                                   */
 /* --------------------------------------------------------------------- */
 
-/* Las tres columnas de XCLOC_LISTA, generadas de la MISMA lista. No hay
- * tres arrays que mantener: hay uno de estructuras, y cada fila sale
- * entera de su linea. */
+/* Las seis columnas de XCLOC_LISTA, generadas de la MISMA lista. No hay
+ * seis arrays que mantener: hay uno de estructuras, y cada fila sale
+ * entera de su linea.
+ *
+ * Los cinco nombres van en un array de IDIOMA_N y no en cinco campos con
+ * nombre, para que sea el MISMO array que come trPick() en todas partes. */
 static const struct {
 	const char *codigo;
-	const char *es;
-	const char *en;
+	const char *n[IDIOMA_N];
 } xclocs[] = {
-#define X(c, e, i) { c, e, i },
+#define X(c, es, en, fr, it, pt) { c, { es, en, fr, it, pt } },
 	XCLOC_LISTA
 #undef X
 };
 
 #define XCLOC_TOTAL ((int)(sizeof(xclocs) / sizeof(xclocs[0])))
 
-/* Por defecto es-ES, que es donde estaba clavado hasta hoy: cambiar el
- * comportamiento por defecto al meter el ajuste seria colar un cambio
- * dentro de otro.
+/* Por defecto en-US.
  *
- * PERO NO SE ESCRIBE EL 2. Habia puesto un 2 a pelo con un comentario al
+ * NO SE ESCRIBE EL INDICE. Habia puesto un 2 a pelo con un comentario al
  * lado diciendo "la fila de es-ES", y es exactamente el indice magico de
  * siempre: el dia que alguien meta un idioma delante, el 2 pasa a ser
  * es-MX y el comentario sigue jurando que es es-ES.
  *
  * Se resuelve por codigo la primera vez que se pregunta, que es la unica
- * forma de que no pueda mentir. */
-/* en-US, igual que el idioma de fabrica de la interfaz.
+ * forma de que no pueda mentir.
  *
  * En la practica aplicar_idioma() de ui.c lo deriva del idioma elegido
- * mientras nadie haya tocado el ajuste de juego, asi que este valor solo
- * se ve si alguien pregunta antes de que la interfaz arranque. Aun asi
- * tiene que decir lo mismo: dos sitios que responden distinto a la misma
- * pregunta acaban discrepando el dia menos pensado. */
+ * --con i18nJuegoPorDefecto()-- mientras nadie haya tocado el ajuste de
+ * juego, asi que este valor solo se ve si alguien pregunta antes de que
+ * la interfaz arranque. */
 #define XCLOC_DEFECTO "en-US"
 
 static int xcloc_actual = -1;   /* sin resolver todavia */
@@ -116,7 +136,7 @@ const char *xclocCodigo(int i)
 const char *xclocNombre(int i)
 {
 	if (i < 0 || i >= XCLOC_TOTAL) return "?";
-	return tr(xclocs[i].es, xclocs[i].en);
+	return trPick(xclocs[i].n);
 }
 
 int xclocPorCodigo(const char *cod)

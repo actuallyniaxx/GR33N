@@ -231,6 +231,10 @@ const authInfo *authStatus(void);
  * sigue siendo valido: eso solo lo sabe el servidor. */
 int  authHaveToken(void);
 
+/* El estado del perfil, sin copiar la estructura. Lo usa la barra
+ * superior, que se dibuja sesenta veces por segundo. */
+profState authProfileState(void);
+
 /* Olvida el token guardado. */
 void authForget(void);
 

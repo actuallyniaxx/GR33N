@@ -125,18 +125,59 @@ static void slog_(const char *fmt, ...)
 	linkLog("[ses] %s", buf);
 }
 
-static void sfail(const char *fmt, ...)
-{
-	va_list ap;
+/* Las cinco cadenas y luego los argumentos, como cualquier printf. Como
+ * TR(), lleva parametros con nombre: sobrarse o quedarse corto es error de
+ * preprocesador, no un aviso que este Makefile no convierte en error.
+ *
+ * El ## de ##__VA_ARGS__ es la extension de GNU que se come la coma
+ * sobrante cuando el mensaje no lleva argumentos, que son 20 de los 32.
+ * El Makefile compila con -std=gnu99, asi que esta disponible. */
+#define SFAIL(es_, en_, fr_, it_, pt_, ...) \
+	sfail_v((const char *const[IDIOMA_N]){ es_, en_, fr_, it_, pt_ }, \
+	        ##__VA_ARGS__)
 
-	va_start(ap, fmt);
-	vsnprintf(info.err, sizeof(info.err), fmt, ap);
+/* EL LOG EN CASTELLANO, LA PANTALLA EN EL IDIOMA DEL USUARIO.
+ *
+ * Y son dos formateos, no uno, porque el mensaje va a dos sitios con dos
+ * lectores distintos: info.err lo lee quien esta delante de la tele, y el
+ * log lo lee quien tria las issues. Si se traduce el log tambien, un
+ * italiano pega "Errore HTTP 401 nella richiesta" y hay que traducirlo de
+ * vuelta para saber por donde empezar. El castellano del log es lo que
+ * hace que los 32 mensajes sigan siendo comparables entre sesiones de
+ * gente distinta.
+ *
+ * LOS %d Y LOS %u TIENEN QUE IR EN EL MISMO ORDEN EN LAS CINCO CADENAS.
+ * Esto no es una recomendacion de estilo: las cinco se formatean con los
+ * MISMOS argumentos, asi que un %s donde el castellano lleva un %u lee un
+ * puntero como entero. El compilador no puede avisar --su -Wformat mira
+ * el literal, y aqui el literal lo elige trPick() en tiempo de ejecucion--
+ * asi que lo comprueba t/i18n-fuente.py sobre el fuente, en cada pasada
+ * de t/run.sh. Es la unica red que hay.
+ *
+ * Dos va_list y no uno: un va_list solo se puede recorrer una vez, y aqui
+ * hay que recorrerlo dos veces. va_copy antes de gastar el primero.
+ * Saltarselo es leer basura en la segunda pasada, y en un PPU no es un
+ * texto raro: es la consola colgada. */
+static void sfail_v(const char *const *v, ...)
+{
+	va_list ap, ap2;
+	char es[sizeof(info.err)];
+
+	va_start(ap, v);
+	va_copy(ap2, ap);
+
+	/* Para el log: siempre la castellana, la casilla IDIOMA_ES. */
+	vsnprintf(es, sizeof(es), v[IDIOMA_ES], ap);
 	va_end(ap);
+
+	/* Para la pantalla: la que toque, y el castellano si no hay. */
+	vsnprintf(info.err, sizeof(info.err), trPick(v), ap2);
+	va_end(ap2);
 
 	info.state = SES_FAILED;
 
-	printf("[ses] FALLO: %s\n", info.err);
-	linkLog("[ses] FALLO: %s", info.err);
+	printf("[ses] FALLO: %s\n", es);
+	linkLog("[ses] FALLO: %s", es);
 }
 
 static u64 now_us(void)
@@ -239,7 +280,11 @@ static int take_str(const cJSON *v, char *out, u32 max, const char *what)
 
 	len = (u32)strlen(v->valuestring);
 	if (len >= max) {
-		sfail("%s no cabe: %u bytes y el hueco son %u", what,
+		SFAIL("%s no cabe: %u bytes y el hueco son %u",
+		      "%s does not fit: %u bytes and the room is %u",
+		      "%s ne rentre pas : %u octets pour %u disponibles",
+		      "%s non ci sta: %u byte e lo spazio è %u",
+		      "%s não cabe: %u bytes e o espaço é %u", what,
 		      (unsigned)len, (unsigned)max);
 		return -2;
 	}
@@ -268,7 +313,11 @@ static int ses_call(const char *method, const char *path, const char *body,
 	*root = NULL;
 
 	if (!xc || xc->state != XC_OK || !xc->base_uri[0]) {
-		sfail("todavia no hay sesion de xCloud abierta");
+		SFAIL("todavia no hay sesion de xCloud abierta",
+		      "no xCloud session is open yet",
+		      "aucune session xCloud n'est encore ouverte",
+		      "non c'è ancora una sessione xCloud aperta",
+		      "ainda não há sessão do xCloud aberta");
 		return -1;
 	}
 
@@ -288,14 +337,22 @@ static int ses_call(const char *method, const char *path, const char *body,
 	base = ses_base[0] ? ses_base : xc->base_uri;
 
 	if (authGsTokenCopy(tok, sizeof(tok)) == 0) {
-		sfail("no hay gsToken");
+		SFAIL("no hay gsToken",
+		      "there is no gsToken",
+		      "pas de gsToken",
+		      "manca il gsToken",
+		      "não há gsToken");
 		return -1;
 	}
 
 	/* base_uri viene entero (https://uks.core...), y hay que partirlo. */
 	if (tlsSplitUrl(base, host, sizeof(host),
 	                base_path, sizeof(base_path)) != 0) {
-		sfail("no entiendo el baseUri: %.100s", base);
+		SFAIL("no entiendo el baseUri: %.100s",
+		      "cannot make sense of the baseUri: %.100s",
+		      "baseUri incompréhensible : %.100s",
+		      "baseUri incomprensibile: %.100s",
+		      "não entendo o baseUri: %.100s", base);
 		return -1;
 	}
 
@@ -327,7 +384,11 @@ static int ses_call(const char *method, const char *path, const char *body,
 	             (path[0] == '/') ? "" : "/",
 	             path);
 	if (n < 0 || (size_t)n >= sizeof(full)) {
-		sfail("la ruta no cabe: %.120s", path);
+		SFAIL("la ruta no cabe: %.120s",
+		      "the path does not fit: %.120s",
+		      "le chemin ne rentre pas : %.120s",
+		      "il percorso non ci sta: %.120s",
+		      "o caminho não cabe: %.120s", path);
 		return -1;
 	}
 
@@ -336,7 +397,11 @@ static int ses_call(const char *method, const char *path, const char *body,
 	             "x-gssv-client: XboxComBrowser\r\n",
 	             tok);
 	if (n < 0 || (size_t)n >= sizeof(hdr)) {
-		sfail("la cabecera de autorizacion no cabe");
+		SFAIL("la cabecera de autorizacion no cabe",
+		      "the authorisation header does not fit",
+		      "l'en-tête d'autorisation ne rentre pas",
+		      "l'intestazione di autorizzazione non ci sta",
+		      "o cabeçalho de autorização não cabe");
 		return -1;
 	}
 
@@ -370,7 +435,11 @@ static int ses_call(const char *method, const char *path, const char *body,
 	if (r == -2) return -2;   /* ocupado: no es fallo */
 
 	if (r != 0) {
-		sfail("%s: sin respuesta de %s: %s", what, host, res->err);
+		SFAIL("%s: sin respuesta de %s: %s",
+		      "%s: no answer from %s: %s",
+		      "%s : pas de réponse de %s : %s",
+		      "%s: nessuna risposta da %s: %s",
+		      "%s: sem resposta de %s: %s", what, host, res->err);
 		return -1;
 	}
 
@@ -496,7 +565,7 @@ static void step_reap_inner(void)
 
 /* LA LIMPIEZA NO PUEDE MARCAR LA SESION COMO FALLIDA.
  *
- * ses_call() llama a sfail() cuando algo va mal, y sfail() pone
+ * ses_call() llama a SFAIL() cuando algo va mal, y SFAIL() pone
  * SES_FAILED. Eso esta bien para los pasos de verdad y esta mal aqui: esto
  * es trabajo de antes de empezar, y que un DELETE de una sesion vieja
  * pinte la pantalla de rojo antes de haber pedido nada seria mentir sobre
@@ -579,7 +648,11 @@ static int step_play(void)
 	info.state = SES_ASKING;
 
 	if (build_play_body(body, sizeof(body), info.title_id) != 0) {
-		sfail("el cuerpo de la peticion no cabe");
+		SFAIL("el cuerpo de la peticion no cabe",
+		      "the request body does not fit",
+		      "le corps de la requête ne rentre pas",
+		      "il corpo della richiesta non ci sta",
+		      "o corpo da requisição não cabe");
 		return -1;
 	}
 
@@ -596,8 +669,19 @@ static int step_play(void)
 	 * cualquiera. Se dicen con todas las letras porque cambian el plan
 	 * de trabajo de las proximas semanas. */
 	if (res.http_status == 401 || res.http_status == 403) {
-		sfail("HTTP %d al pedir sesion: la cadena simple NO basta aqui, "
+		SFAIL("HTTP %d al pedir sesion: la cadena simple NO basta aqui, "
 		      "el gateway pide SISU (token de dispositivo y firma P-256)",
+		      "HTTP %d asking for a session: the plain chain is NOT enough "
+		      "here, the gateway wants SISU (device token and P-256 "
+		      "signature)",
+		      "HTTP %d à la demande de session : la chaîne simple NE suffit "
+		      "PAS ici, la passerelle exige SISU (jeton d'appareil et "
+		      "signature P-256)",
+		      "HTTP %d nella richiesta di sessione: la catena semplice NON "
+		      "basta qui, il gateway vuole SISU (token dispositivo e firma "
+		      "P-256)",
+		      "HTTP %d ao pedir sessão: a cadeia simples não basta aqui, o "
+		      "gateway EXIGE SISU (token de dispositivo e assinatura P-256)",
 		      res.http_status);
 		if (root) cJSON_Delete(root);
 		return -1;
@@ -611,7 +695,11 @@ static int step_play(void)
 		const cJSON *code = PICK(root, "code", "Code", "error");
 		const cJSON *msg  = PICK(root, "message", "Message");
 
-		sfail("HTTP %d: %s%s%s", res.http_status,
+		SFAIL("HTTP %d: %s%s%s",
+		      "HTTP %d: %s%s%s",
+		      "HTTP %d : %s%s%s",
+		      "HTTP %d: %s%s%s",
+		      "HTTP %d: %s%s%s", res.http_status,
 		      cJSON_IsString(code) ? code->valuestring : "(sin codigo)",
 		      cJSON_IsString(msg) ? " - " : "",
 		      cJSON_IsString(msg) ? msg->valuestring : "");
@@ -621,7 +709,11 @@ static int step_play(void)
 	}
 
 	if (!root) {
-		sfail("la respuesta de la sesion no es JSON");
+		SFAIL("la respuesta de la sesion no es JSON",
+		      "the session response is not JSON",
+		      "la réponse de session n'est pas du JSON",
+		      "la risposta della sessione non è JSON",
+		      "a resposta da sessão não é JSON");
 		return -1;
 	}
 
@@ -631,7 +723,11 @@ static int step_play(void)
 
 		if (take_str(p, info.path, sizeof(info.path), "sessionPath") != 0) {
 			if (info.state != SES_FAILED)
-				sfail("la respuesta no trae sessionPath");
+				SFAIL("la respuesta no trae sessionPath",
+				      "the response has no sessionPath",
+				      "la réponse ne contient pas de sessionPath",
+				      "la risposta non porta sessionPath",
+				      "a resposta não traz sessionPath");
 			cJSON_Delete(root);
 			return -1;
 		}
@@ -681,7 +777,11 @@ static int step_connect(void)
 		                      terr, sizeof(terr));
 		if (r == -2) return -2;
 		if (r != 0) {
-			sfail("sin token de traspaso: %s", terr);
+			SFAIL("sin token de traspaso: %s",
+			      "no transfer token: %s",
+			      "pas de jeton de transfert : %s",
+			      "nessun token di trasferimento: %s",
+			      "sem token de transferência: %s", terr);
 			return -1;
 		}
 
@@ -691,7 +791,13 @@ static int step_connect(void)
 		 * unas cuantas: si algun dia trae algo raro, mejor un mensaje con
 		 * nombre que un 400 apuntando a la autenticacion. */
 		if (strpbrk(utok, "\"\\\r\n")) {
-			sfail("el token de traspaso trae caracteres que romperian el JSON");
+			SFAIL("el token de traspaso trae caracteres que romperian el JSON",
+			      "the transfer token has characters that would break the JSON",
+			      "le jeton de transfert contient des caractères qui casseraient "
+			      "le JSON",
+			      "il token di trasferimento ha caratteri che romperebbero il "
+			      "JSON",
+			      "o token de transferência traz caracteres que quebrariam o JSON");
 			return -1;
 		}
 
@@ -700,7 +806,11 @@ static int step_connect(void)
 
 	n = snprintf(cbody, sizeof(cbody), "{\"userToken\":\"%s\"}", utok);
 	if (n < 0 || (size_t)n >= sizeof(cbody)) {
-		sfail("el cuerpo del connect no cabe: %u bytes", (unsigned)n);
+		SFAIL("el cuerpo del connect no cabe: %u bytes",
+		      "the connect body does not fit: %u bytes",
+		      "le corps du connect ne rentre pas : %u octets",
+		      "il corpo del connect non ci sta: %u byte",
+		      "o corpo do connect não cabe: %u bytes", (unsigned)n);
 		return -1;
 	}
 
@@ -722,7 +832,11 @@ static int step_connect(void)
 		const cJSON *code = PICK(root, "code", "Code", "error");
 		const cJSON *msg  = PICK(root, "message", "Message");
 
-		sfail("HTTP %d al autenticar la sesion: %s%s%s", res.http_status,
+		SFAIL("HTTP %d al autenticar la sesion: %s%s%s",
+		      "HTTP %d authenticating the session: %s%s%s",
+		      "HTTP %d à l'authentification de la session : %s%s%s",
+		      "HTTP %d nell'autenticazione della sessione: %s%s%s",
+		      "HTTP %d ao autenticar a sessão: %s%s%s", res.http_status,
 		      cJSON_IsString(code) ? code->valuestring : "(sin codigo)",
 		      cJSON_IsString(msg) ? " - " : "",
 		      cJSON_IsString(msg) ? msg->valuestring : "");
@@ -766,13 +880,21 @@ static int step_state(int *first)
 	if (*first) { log_shape("estado", root, res.body); *first = 0; }
 
 	if (res.http_status != 200) {
-		sfail("HTTP %d al preguntar el estado", res.http_status);
+		SFAIL("HTTP %d al preguntar el estado",
+		      "HTTP %d asking for the state",
+		      "HTTP %d à la demande d'état",
+		      "HTTP %d nella richiesta di stato",
+		      "HTTP %d ao perguntar o estado", res.http_status);
 		if (root) cJSON_Delete(root);
 		return SES_ST_MUERTA;
 	}
 
 	if (!root) {
-		sfail("el estado no es JSON");
+		SFAIL("el estado no es JSON",
+		      "the state is not JSON",
+		      "l'état n'est pas du JSON",
+		      "lo stato non è JSON",
+		      "o estado não é JSON");
 		return SES_ST_MUERTA;
 	}
 
@@ -811,7 +933,11 @@ static int step_state(int *first)
 			} else if (strcmp(s, "Failed") == 0 ||
 			           strcmp(s, "Terminated") == 0 ||
 			           strcmp(s, "Canceled") == 0) {
-				sfail("el servidor dice que la sesion ha fallado: \"%s\"", s);
+				SFAIL("el servidor dice que la sesion ha fallado: \"%s\"",
+				      "the server says the session failed: \"%s\"",
+				      "le serveur dit que la session a échoué : \"%s\"",
+				      "il server dice che la sessione è fallita: \"%s\"",
+				      "o servidor diz que a sessão falhou: \"%s\"", s);
 				cJSON_Delete(root);
 				return SES_ST_MUERTA;
 			} else if (strstr(s, "Wait") || strstr(s, "Queue")) {
@@ -1134,8 +1260,15 @@ static void run_session_inner(void)
 				 * final es como se llega a cientos de lineas en el log
 				 * sin una peticion enviada. */
 				if (++tries > 100) {
-					sfail("veinte segundos esperando turno de red y no "
-					      "llega; lo dejo");
+					SFAIL("veinte segundos esperando turno de red y no "
+					      "llega; lo dejo",
+					      "twenty seconds waiting for a network turn and it never comes; "
+					      "giving up",
+					      "vingt secondes à attendre un tour de réseau qui ne vient pas ; "
+					      "j'abandonne",
+					      "venti secondi ad aspettare il turno di rete e non arriva; "
+					      "lascio perdere",
+					      "vinte segundos esperando a vez na rede e não chega; desisto");
 					return;
 				}
 				if (tries == 25)
@@ -1181,8 +1314,16 @@ static void run_session_inner(void)
 					c = step_connect();
 					if (c == -2) {
 						if (++t > 150) {   /* treinta segundos */
-							sfail("treinta segundos esperando turno de red "
-							      "para autenticar la sesion; la suelto");
+							SFAIL("treinta segundos esperando turno de red "
+							      "para autenticar la sesion; la suelto",
+							      "thirty seconds waiting for a network turn to authenticate the "
+							      "session; letting it go",
+							      "trente secondes à attendre un tour de réseau pour authentifier "
+							      "la session ; je la lâche",
+							      "trenta secondi ad aspettare il turno di rete per autenticare "
+							      "la sessione; la mollo",
+							      "trinta segundos esperando a vez na rede para autenticar a "
+							      "sessão; desisto dela");
 							step_delete();
 							return;
 						}
@@ -1212,8 +1353,15 @@ static void run_session_inner(void)
 				                                       : SES_MAX_WAIT_S;
 
 				if (waited >= techo) {
-					sfail("%u segundos esperando y sigue en \"%s\"; suelto "
-					      "la maquina", (unsigned)techo, info.server_state);
+					SFAIL("%u segundos esperando y sigue en \"%s\"; suelto "
+					      "la maquina",
+					      "%u seconds waiting and it is still on \"%s\"; releasing the "
+					      "machine",
+					      "%u secondes d'attente et toujours sur \"%s\" ; je libère la "
+					      "machine",
+					      "%u secondi di attesa ed è ancora su \"%s\"; rilascio la "
+					      "macchina",
+					      "%u segundos esperando e continua em \"%s\"; libero a máquina", (unsigned)techo, info.server_state);
 					step_delete();
 					return;
 				}
@@ -1333,17 +1481,29 @@ static int step_sdp_offer(const char *oferta)
 	 * a mano: un escapador propio es justo la clase de codigo que parece
 	 * bien y se come una comilla el dia que llegue una. */
 	s = cJSON_CreateString(oferta);
-	if (s == NULL) { sfail("sin memoria para la oferta"); return -1; }
+	if (s == NULL) { SFAIL("sin memoria para la oferta",
+	      "out of memory for the offer",
+	      "plus de mémoire pour l'offre",
+	      "memoria esaurita per l'offerta",
+	      "sem memória para a oferta"); return -1; }
 	sdp_json = cJSON_PrintUnformatted(s);
 	cJSON_Delete(s);
-	if (sdp_json == NULL) { sfail("no se pudo escapar la oferta"); return -1; }
+	if (sdp_json == NULL) { SFAIL("no se pudo escapar la oferta",
+	      "could not escape the offer",
+	      "impossible d'échapper l'offre",
+	      "non è stato possibile fare l'escape dell'offerta",
+	      "não foi possível escapar a oferta"); return -1; }
 
 	{
 		size_t n = strlen(sdp_json) + sizeof(SES_SDP_CONFIG) + 128;
 		cuerpo = (char *)malloc(n);
 		if (cuerpo == NULL) {
 			free(sdp_json);
-			sfail("sin memoria para el cuerpo del /sdp");
+			SFAIL("sin memoria para el cuerpo del /sdp",
+			      "out of memory for the /sdp body",
+			      "plus de mémoire pour le corps du /sdp",
+			      "memoria esaurita per il corpo di /sdp",
+			      "sem memória para o corpo do /sdp");
 			return -1;
 		}
 		snprintf(cuerpo, n,
@@ -1415,7 +1575,11 @@ static int step_sdp_answer(char *fuera, size_t fuera_n)
 			/* Que no quepa es un FALLO. Media respuesta SDP tiene forma
 			 * de respuesta SDP y libpeer se la traga sin quejarse. */
 			if (strlen(sdp->valuestring) >= fuera_n) {
-				sfail("la respuesta SDP no cabe: %u bytes",
+				SFAIL("la respuesta SDP no cabe: %u bytes",
+				      "the SDP answer does not fit: %u bytes",
+				      "la réponse SDP ne rentre pas : %u octets",
+				      "la risposta SDP non ci sta: %u byte",
+				      "a resposta SDP não cabe: %u bytes",
 				      (unsigned)strlen(sdp->valuestring));
 				cJSON_Delete(ex);
 				return -1;
@@ -1463,7 +1627,11 @@ static int step_sdp_answer(char *fuera, size_t fuera_n)
 		}
 	}
 
-	sfail("un minuto esperando la respuesta SDP y no llega");
+	SFAIL("un minuto esperando la respuesta SDP y no llega",
+	      "a minute waiting for the SDP answer and it never comes",
+	      "une minute à attendre la réponse SDP qui ne vient pas",
+	      "un minuto ad aspettare la risposta SDP e non arriva",
+	      "um minuto esperando a resposta SDP e não chega");
 	return -1;
 }
 
@@ -1557,7 +1725,11 @@ static int step_ice_post(const char *oferta)
 	cuerpo = cJSON_PrintUnformatted(raiz);
 	cJSON_Delete(raiz);
 
-	if (cuerpo == NULL) { sfail("sin memoria para el /ice"); return -1; }
+	if (cuerpo == NULL) { SFAIL("sin memoria para el /ice",
+	      "out of memory for the /ice",
+	      "plus de mémoire pour le /ice",
+	      "memoria esaurita per /ice",
+	      "sem memória para o /ice"); return -1; }
 
 	snprintf(path, sizeof(path), "%s/ice", info.path);
 
@@ -1722,7 +1894,11 @@ static int step_ice_poll(void)
 	 * Lo que no se puede es seguir sin ninguna: ahi no hay a quien
 	 * llamar y ICE no tendria ni un par que probar. */
 	if (total == 0) {
-		sfail("el servidor no ha dado ni una direccion IPv4");
+		SFAIL("el servidor no ha dado ni una direccion IPv4",
+		      "the server gave no IPv4 address at all",
+		      "le serveur n'a donné aucune adresse IPv4",
+		      "il server non ha dato nemmeno un indirizzo IPv4",
+		      "o servidor não deu nenhum endereço IPv4");
 		return -1;
 	}
 
@@ -1781,13 +1957,21 @@ static void run_webrtc(void)
 	wrtcSesionStun("stun:stun.l.google.com:19302");
 
 	if (wrtcSesionCrear() != 0) {
-		sfail("no se pudo crear la conexion WebRTC");
+		SFAIL("no se pudo crear la conexion WebRTC",
+		      "could not create the WebRTC connection",
+		      "impossible de créer la connexion WebRTC",
+		      "non è stato possibile creare la connessione WebRTC",
+		      "não foi possível criar a conexão WebRTC");
 		goto recoger;   /* el decodificador ya esta abierto: hay que cerrarlo */
 	}
 
 	oferta = wrtcSesionOferta();
 	if (oferta == NULL) {
-		sfail("libpeer no ha dado oferta");
+		SFAIL("libpeer no ha dado oferta",
+		      "libpeer produced no offer",
+		      "libpeer n'a produit aucune offre",
+		      "libpeer non ha prodotto un'offerta",
+		      "libpeer não deu oferta");
 		goto recoger;
 	}
 
@@ -1926,7 +2110,11 @@ int sesInit(void)
 	                    SES_THREAD_STACK, THREAD_JOINABLE,
 	                    "GR33N sesion") != 0) {
 		ses_running = 0;
-		sfail("sysThreadCreate del hilo de sesion de juego fallo");
+		SFAIL("sysThreadCreate del hilo de sesion de juego fallo",
+		      "sysThreadCreate for the game session thread failed",
+		      "sysThreadCreate du fil de session de jeu a échoué",
+		      "sysThreadCreate del thread di sessione di gioco è fallito",
+		      "sysThreadCreate da thread de sessão de jogo falhou");
 		return -1;
 	}
 

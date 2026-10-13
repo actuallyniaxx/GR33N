@@ -66,7 +66,7 @@
   <!-- El formato es NN.NN y no da para el numero de parche, asi que se
        ponen mayor y menor: 0.27.x -> 00.27. Si esto se queda atras
        respecto a GR33N_VERSION, 'make pkg' avisa. -->
-  <value name="APP_VER" type="string" size="8">01.00</value>
+  <value name="APP_VER" type="string" size="8">01.01</value>
   <value name="ATTRIBUTE" type="integer">0</value>
   <value name="BOOTABLE" type="integer">1</value>
   <value name="CATEGORY" type="string" size="4">CB</value>
@@ -77,5 +77,5 @@
   <value name="SOUND_FORMAT" type="integer">1</value>
   <value name="TITLE" type="string" size="128">GR33N</value>
   <value name="TITLE_ID" type="string" size="16">GR33N0PS3</value>
-  <value name="VERSION" type="string" size="8">01.00</value>
+  <value name="VERSION" type="string" size="8">01.01</value>
 </sfo>

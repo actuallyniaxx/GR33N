@@ -141,62 +141,65 @@
  * pantalla que un usuario normal no ve nunca es trabajo que rinde en otro
  * sitio.
  *
- * Los tres NULL de cada una son los campos _en, y tr() con NULL devuelve
- * el castellano. O sea que esto no deja huecos en pantalla: deja
- * castellano. Si algun dia se traducen, se rellenan y ya esta. */
+ * Cada texto lleva solo la casilla del castellano llena, y trPick() con
+ * una casilla vacia devuelve el castellano. O sea que esto no deja huecos
+ * en pantalla: deja castellano. Si algun dia se traducen, se rellenan las
+ * otras cuatro y ya esta. */
 static const uiTitle title_video_debug = {
 	"VIDEO_DEBUG",
-	"VIDEO_DEBUG",
-	"GR33N - generado en la consola",
-	"Carta de ajuste local. Barras SMPTE para verificar el formato de "
+	/* Sin traducir a proposito: es un panel de PRUEBAS, y solo
+	 * sale con Debug puesto. Ver la nota de uiTitle en ui.h. */
+	{ "VIDEO_DEBUG" },
+	{ "GR33N - generado en la consola" },
+	{ "Carta de ajuste local. Barras SMPTE para verificar el formato de "
 	"textura y el remap de canales, degradado en movimiento para el frame "
 	"pacing, barra vertical que barre como detector de judder, y un borde "
 	"de 3 pixeles que se come el overscan de la tele si lo hay. No toca la "
-	"red: sirve para saber si un problema es de video o de enlace.",
-	/* Sin traducir a proposito: ver la nota de abajo. */
-	NULL, NULL, NULL,
+	"red: sirve para saber si un problema es de video o de enlace." },
 	TITLE_TESTCARD,
 	GR33N_RGB(0, 255, 64)
 };
 
 static const uiTitle title_h264_debug = {
 	"H264_DEBUG",
-	"H264_DEBUG",
-	"GR33N - cellVdec, decodificacion por hardware",
-	"Clip H.264 empotrado en el binario, decodificado por el hardware de "
+	/* Sin traducir a proposito: es un panel de PRUEBAS, y solo
+	 * sale con Debug puesto. Ver la nota de uiTitle en ui.h. */
+	{ "H264_DEBUG" },
+	{ "GR33N - cellVdec, decodificacion por hardware" },
+	{ "Clip H.264 empotrado en el binario, decodificado por el hardware de "
 	"la consola con cellVdec y volcado en la superficie. Sin red y sin "
 	"WebRTC: lo unico que se prueba es el decodificador. El numero que "
 	"importa es la latencia de decodificacion, que en el cliente final se "
 	"lleva casi todo el presupuesto. Si esto va, el camino a xCloud esta "
-	"abierto; si no va, no hay proyecto.",
-	/* Sin traducir a proposito: ver la nota de abajo. */
-	NULL, NULL, NULL,
+	"abierto; si no va, no hay proyecto." },
 	TITLE_H264,
 	GR33N_RGB(255, 140, 0)
 };
 
 static const uiTitle title_tls_debug = {
 	"TLS_DEBUG",
-	"TLS_DEBUG",
-	"GR33N - mbedTLS contra Microsoft",
-	"Una peticion HTTPS de verdad al servidor de identidad de Microsoft, "
+	/* Sin traducir a proposito: es un panel de PRUEBAS, y solo
+	 * sale con Debug puesto. Ver la nota de uiTitle en ui.h. */
+	{ "TLS_DEBUG" },
+	{ "GR33N - mbedTLS contra Microsoft" },
+	{ "Una peticion HTTPS de verdad al servidor de identidad de Microsoft, "
 	"con verificacion de certificado obligatoria contra las raices "
 	"empotradas. Resuelve el nombre, abre el socket, negocia TLS y pide el "
 	"documento de descubrimiento de OpenID. Ese documento es el que dice "
 	"donde esta el endpoint de codigo de dispositivo, asi que esto no es "
 	"solo una prueba de transporte: es el primer paso real del inicio de "
-	"sesion. Si el apreton de manos sale, el camino a xCloud esta abierto.",
-	/* Sin traducir a proposito: ver la nota de abajo. */
-	NULL, NULL, NULL,
+	"sesion. Si el apreton de manos sale, el camino a xCloud esta abierto." },
 	TITLE_TLS,
 	GR33N_RGB(120, 160, 255)
 };
 
 static const uiTitle title_webrtc_debug = {
 	"WEBRTC_DEBUG",
-	"WEBRTC_DEBUG",
-	"GR33N - despertar libpeer",
-	"Arranca la pila entera de WebRTC en la consola y cronometra cada paso. "
+	/* Sin traducir a proposito: es un panel de PRUEBAS, y solo
+	 * sale con Debug puesto. Ver la nota de uiTitle en ui.h. */
+	{ "WEBRTC_DEBUG" },
+	{ "GR33N - despertar libpeer" },
+	{ "Arranca la pila entera de WebRTC en la consola y cronometra cada paso. "
 	"NO se conecta a nada: no manda un paquete ni negocia nada. Lo que mide "
 	"son tres cosas que duelen si se descubren tarde. Cuanto tarda la "
 	"generacion de la clave RSA del certificado DTLS, que en un PPU de 2006 "
@@ -204,9 +207,7 @@ static const uiTitle title_webrtc_debug = {
 	"milisegundo, porque los contadores heredados cuentan vueltas y no "
 	"tiempo. Y si la oferta SDP que sale lleva exactamente lo que xCloud "
 	"exige, comprobado sobre el texto generado y no sobre el codigo fuente. "
-	"La oferta entera sale por el log remoto, linea a linea.",
-	/* Sin traducir a proposito: ver la nota de abajo. */
-	NULL, NULL, NULL,
+	"La oferta entera sale por el log remoto, linea a linea." },
 	TITLE_WEBRTC,
 	GR33N_RGB(0, 200, 120)
 };
@@ -216,23 +217,50 @@ static const uiTitle title_webrtc_debug = {
  * en vez de inventar un modo nuevo para lo mismo. */
 static const uiTitle title_auth = {
 	"INICIAR_SESION",
-	"Iniciar sesion",
-	"Cuenta de Microsoft",
-	"Inicio de sesion por codigo de dispositivo. La consola pide un codigo "
-	"corto, lo enseña en la tele, y tu lo escribes en el movil o en el PC. "
-	"La contrasena no pasa por la consola en ningun momento, que es "
-	"exactamente el motivo por el que este flujo existe. Lo que se guarda "
-	"aqui es un token de refresco: caduca, se puede revocar desde tu "
-	"cuenta, y no sirve para nada mas.",
+	{ "Iniciar sesion",
+	  "Sign in",
+	  "Se connecter",
+	  "Accedi",
+	  "Entrar" },
+	{ "Cuenta de Microsoft",
+	  "Microsoft account",
+	  "Compte Microsoft",
+	  "Account Microsoft",
+	  "Conta Microsoft" },
+	{ "Inicio de sesion por codigo de dispositivo. La consola pide un codigo "
+	  "corto, lo enseña en la tele, y tu lo escribes en el movil o en el PC. "
+	  "La contrasena no pasa por la consola en ningun momento, que es "
+	  "exactamente el motivo por el que este flujo existe. Lo que se guarda "
+	  "aqui es un token de refresco: caduca, se puede revocar desde tu "
+	  "cuenta, y no sirve para nada mas.",
 
-	"Sign in",
-	"Microsoft account",
-	"Device code sign-in. The console asks for a short code, shows it on "
-	"the TV, and you type it on your phone or PC. Your password never "
-	"passes through the console at any point, which is exactly why this "
-	"flow exists. What gets stored here is a refresh token: it expires, "
-	"you can revoke it from your account, and it is good for nothing "
-	"else.",
+	  "Device code sign-in. The console asks for a short code, shows it on "
+	  "the TV, and you type it on your phone or PC. Your password never "
+	  "passes through the console at any point, which is exactly why this "
+	  "flow exists. What gets stored here is a refresh token: it expires, "
+	  "you can revoke it from your account, and it is good for nothing "
+	  "else.",
+
+	  "Connexion par code d'appareil. La console demande un code court, "
+	  "l'affiche sur la télé, et tu le saisis sur ton téléphone ou ton PC. "
+	  "Ton mot de passe ne passe à aucun moment par la console, et c'est "
+	  "exactement la raison d'être de ce flux. Ce qui est stocké ici est un "
+	  "jeton de rafraîchissement : il expire, tu peux le révoquer depuis ton "
+	  "compte, et il ne sert à rien d'autre.",
+
+	  "Accesso tramite codice dispositivo. La console chiede un codice "
+	  "breve, lo mostra sulla TV, e tu lo digiti sul telefono o sul PC. La "
+	  "password non passa mai dalla console, ed è esattamente il motivo per "
+	  "cui questo flusso esiste. Qui viene salvato un token di "
+	  "aggiornamento: scade, puoi revocarlo dal tuo account, e non serve a "
+	  "nient'altro.",
+
+	  "Login por código de dispositivo. O console pede um código curto, "
+	  "mostra na TV, e você digita no celular ou no PC. A senha não passa "
+	  "pelo console em momento algum, que é exatamente o motivo de este "
+	  "fluxo existir. O que fica guardado aqui é um token de atualização: "
+	  "expira, pode ser revogado pela sua conta, e não serve para mais "
+	  "nada." },
 
 	TITLE_AUTH,
 	GR33N_RGB(0, 220, 160)
@@ -240,15 +268,15 @@ static const uiTitle title_auth = {
 
 static const uiTitle title_loop_test = {
 	"LOOP_TEST",
-	"LOOP_TEST",
-	"GR33N - servidor de pruebas",
-	"El lazo completo contra el PC. La consola sube el estado del mando a "
+	/* Sin traducir a proposito: es un panel de PRUEBAS, y solo
+	 * sale con Debug puesto. Ver la nota de uiTitle en ui.h. */
+	{ "LOOP_TEST" },
+	{ "GR33N - servidor de pruebas" },
+	{ "El lazo completo contra el PC. La consola sube el estado del mando a "
 	"60 Hz y el servidor devuelve un frame. La cruz blanca la pinta la PS3 "
 	"con el input local, sin latencia; el cursor de la rejilla lo pinta el "
 	"PC. La distancia entre los dos cuando mueves el stick es la latencia "
-	"de punta a punta, en directo.",
-	/* Sin traducir a proposito: ver la nota de abajo. */
-	NULL, NULL, NULL,
+	"de punta a punta, en directo." },
 	TITLE_REMOTE,
 	GR33N_RGB(0, 200, 255)
 };
@@ -274,10 +302,18 @@ typedef struct {
 	 * apunte a otra tabla. Ver el comentario largo de i18n.h: dos listas
 	 * paralelas en el mismo orden es como se acaba con una fila que dice
 	 * una cosa y hace otra. */
-	const char *name;
-	const char *name_en;
-	const char *desc;
-	const char *desc_en;
+	/* El nombre y la descripcion, cada uno con sus IDIOMA_N casillas.
+	 *
+	 * Antes eran cuatro campos sueltos (name, name_en, desc, desc_en) y
+	 * con cinco idiomas habrian sido DIEZ, en fila, todos const char *.
+	 * Diez cadenas seguidas en un inicializador es la forma mas comoda
+	 * que existe de meter la descripcion italiana en el nombre portugues
+	 * sin que el compilador diga ni mu: son todas del mismo tipo.
+	 *
+	 * En dos arrays, cada grupo se lee de un vistazo y sobrarse dentro de
+	 * uno es un aviso del compilador en esa fila concreta. */
+	const char *name[IDIOMA_N];
+	const char *desc[IDIOMA_N];
 	uiSetKind   kind;
 	int        *value;
 
@@ -342,14 +378,15 @@ static int live_exit = 0;
  * mas: este comentario tenia encima el de la lista de regiones, copiado de
  * abajo, que es exactamente el mismo descuido que hacia salir un ping al
  * lado de este ajuste. */
+/*        castellano      ingles          frances          italiano          portugues (BR)   */
 #define HUD_POS_LISTA \
-	X("Arriba izq", "Top left")     \
-	X("Arriba der", "Top right")    \
-	X("Abajo izq",  "Bottom left")  \
-	X("Abajo der",  "Bottom right")
+	X("Arriba izq", "Top left",     "Haut gauche",   "In alto a sin.", "Sup. esquerdo")  \
+	X("Arriba der", "Top right",    "Haut droite",   "In alto a des.", "Sup. direito")   \
+	X("Abajo izq",  "Bottom left",  "Bas gauche",    "In basso a sin.","Inf. esquerdo")  \
+	X("Abajo der",  "Bottom right", "Bas droite",    "In basso a des.","Inf. direito")
 
-static const struct { const char *es, *en; } hud_pos_txt[] = {
-#define X(e, i) { e, i },
+static const struct { const char *n[IDIOMA_N]; } hud_pos_txt[] = {
+#define X(es, en, fr, it, pt) { { es, en, fr, it, pt } },
 	HUD_POS_LISTA
 #undef X
 };
@@ -392,14 +429,18 @@ static const char *hud_pos_name[HUD_POS_N];
 /* "Atras" es el boton de cancelar, que depende del ajuste de intercambiar
  * X y O -- por eso se traduce y no se pone "O" a secas. Los demas son
  * nombres de botones fisicos y no se traducen: L1 es L1 en todas partes. */
+/* Solo la primera fila lleva texto de verdad: las otras tres son nombres
+ * de botones, y un boton se llama START en los cinco idiomas. Se repiten
+ * en vez de dejarlas NULL para que la tabla se lea entera de un vistazo. */
+/*        castellano         ingles             frances            italiano            portugues (BR)      boton que se mantiene       boton que se pulsa */
 #define COMBO_LISTA \
-	X("SELECT + Atras",  "SELECT + Back",     GR33N_BTN_SELECT,            0)                \
-	X("SELECT + START",  "SELECT + START",    GR33N_BTN_SELECT,            GR33N_BTN_START)  \
-	X("L1 + R1 + START", "L1 + R1 + START",   GR33N_BTN_L1 | GR33N_BTN_R1, GR33N_BTN_START)  \
-	X("L3 + R3",         "L3 + R3",           GR33N_BTN_L3,                GR33N_BTN_R3)
+	X("SELECT + Atras",  "SELECT + Back",   "SELECT + Retour", "SELECT + Indietro","SELECT + Voltar",  GR33N_BTN_SELECT,            0)                \
+	X("SELECT + START",  "SELECT + START",  "SELECT + START",  "SELECT + START",   "SELECT + START",   GR33N_BTN_SELECT,            GR33N_BTN_START)  \
+	X("L1 + R1 + START", "L1 + R1 + START", "L1 + R1 + START", "L1 + R1 + START",  "L1 + R1 + START",  GR33N_BTN_L1 | GR33N_BTN_R1, GR33N_BTN_START)  \
+	X("L3 + R3",         "L3 + R3",         "L3 + R3",         "L3 + R3",          "L3 + R3",          GR33N_BTN_L3,                GR33N_BTN_R3)
 
-static const struct { const char *es, *en; } combo_txt[] = {
-#define X(e, i, h, p) { e, i },
+static const struct { const char *n[IDIOMA_N]; } combo_txt[] = {
+#define X(es, en, fr, it, pt, h, p) { { es, en, fr, it, pt } },
 	COMBO_LISTA
 #undef X
 };
@@ -409,7 +450,7 @@ static const char *combo_name[4];
 /* pulsar == 0 quiere decir "el boton de Atras", que depende del ajuste de
  * intercambiar X y O. */
 static const struct { u32 mantener, pulsar; } combo_btn[] = {
-#define X(e, i, h, p) { (h), (p) },
+#define X(es, en, fr, it, pt, h, p) { (h), (p) },
 	COMBO_LISTA
 #undef X
 };
@@ -441,44 +482,58 @@ static int         server_opt_n = 1;
  * otra region distinta sin avisar. Cadena vacia = automatico. */
 static char set_server_nom[64] = "";
 
-/* Nombres en castellano para las regiones que se conocen. Es SOLO
- * cosmetica: la que no este en esta tabla sale con el nombre que dice
- * Microsoft, que es preferible a inventarse una traduccion. El log
- * siempre lleva el nombre original. */
-static const struct { const char *ms; const char *es; } region_es[] = {
-	{ "WestEurope",         "Europa Oeste"        },
-	{ "NorthEurope",        "Europa Norte"        },
-	{ "UKSouth",            "Reino Unido Sur"     },
-	{ "UKWest",             "Reino Unido Oeste"   },
-	{ "FranceCentral",      "Francia Centro"      },
-	{ "GermanyWestCentral", "Alemania Oeste"      },
-	{ "SwedenCentral",      "Suecia Centro"       },
-	{ "ItalyNorth",         "Italia Norte"        },
-	{ "SpainCentral",       "Espana Centro"       },
-	{ "PolandCentral",      "Polonia Centro"      },
-	{ "EastUS",             "EEUU Este"           },
-	{ "EastUS2",            "EEUU Este 2"         },
-	{ "WestUS",             "EEUU Oeste"          },
-	{ "WestUS2",            "EEUU Oeste 2"        },
-	{ "SouthCentralUS",     "EEUU Centro Sur"     },
-	{ "NorthCentralUS",     "EEUU Centro Norte"   },
-	{ "WestCentralUS",      "EEUU Centro Oeste"   },
-	{ "CanadaCentral",      "Canada Centro"       },
-	{ "CanadaEast",         "Canada Este"         },
-	{ "BrazilSouth",        "Brasil Sur"          },
-	{ "MexicoCentral",      "Mexico Centro"       },
-	{ "JapanEast",          "Japon Este"          },
-	{ "JapanWest",          "Japon Oeste"         },
-	{ "KoreaCentral",       "Corea Centro"        },
-	{ "EastAsia",           "Asia Este"           },
-	{ "SoutheastAsia",      "Asia Sudeste"        },
-	{ "CentralIndia",       "India Centro"        },
-	{ "AustraliaEast",      "Australia Este"      },
-	{ "AustraliaSouthEast", "Australia Sudeste"   },
-	{ "UAENorth",           "Emiratos Norte"      },
-	{ "SouthAfricaNorth",   "Sudafrica Norte"     }
+/* Nombres bonitos para las regiones que se conocen. Es SOLO cosmetica: la
+ * que no este en esta tabla sale con el nombre que dice Microsoft, que es
+ * preferible a inventarse una traduccion. El log siempre lleva el nombre
+ * original, pase lo que pase aqui.
+ *
+ * ESTA TABLA ERA EL AGUJERO MAS GRANDE DE LA TRADUCCION. Tenia una sola
+ * columna, en castellano, y region_bonito() la devolvia tal cual: quien
+ * ponia GR33N en ingles seguia leyendo "Europa Oeste" y "EEUU Centro
+ * Norte" en la lista de servidores. No estaba mal traducido, es que no
+ * pasaba por el traductor -- que es la forma de quedarse sin traducir que
+ * no se ve leyendo el idioma en el que escribes.
+ *
+ * Ahora es el mismo array de IDIOMA_N que todo lo demas, asi que anadir
+ * un idioma la rompe en compilacion en vez de dejarla a medias. */
+static const struct {
+	const char *ms;
+	const char *n[IDIOMA_N];
+} regiones[] = {
+	/*  Microsoft            castellano            ingles                frances                 italiano               portugues (BR)          */
+	{ "WestEurope",       { "Europa Oeste",       "West Europe",        "Europe Ouest",         "Europa Ovest",        "Europa Ocidental"      } },
+	{ "NorthEurope",      { "Europa Norte",       "North Europe",       "Europe Nord",          "Europa Nord",         "Europa Setentrional"   } },
+	{ "UKSouth",          { "Reino Unido Sur",    "UK South",           "Royaume-Uni Sud",      "Regno Unito Sud",     "Reino Unido Sul"       } },
+	{ "UKWest",           { "Reino Unido Oeste",  "UK West",            "Royaume-Uni Ouest",    "Regno Unito Ovest",   "Reino Unido Oeste"     } },
+	{ "FranceCentral",    { "Francia Centro",     "France Central",     "France Centre",        "Francia Centro",      "França Central"        } },
+	{ "GermanyWestCentral",{"Alemania Oeste",     "Germany West",       "Allemagne Ouest",      "Germania Ovest",      "Alemanha Ocidental"    } },
+	{ "SwedenCentral",    { "Suecia Centro",      "Sweden Central",     "Suède Centre",         "Svezia Centro",       "Suécia Central"        } },
+	{ "ItalyNorth",       { "Italia Norte",       "Italy North",        "Italie Nord",          "Italia Nord",         "Itália Norte"          } },
+	{ "SpainCentral",     { "España Centro",      "Spain Central",      "Espagne Centre",       "Spagna Centro",       "Espanha Central"       } },
+	{ "PolandCentral",    { "Polonia Centro",     "Poland Central",     "Pologne Centre",       "Polonia Centro",      "Polônia Central"       } },
+	{ "EastUS",           { "EEUU Este",          "US East",            "É-U Est",              "USA Est",             "EUA Leste"             } },
+	{ "EastUS2",          { "EEUU Este 2",        "US East 2",          "É-U Est 2",            "USA Est 2",           "EUA Leste 2"           } },
+	{ "WestUS",           { "EEUU Oeste",         "US West",            "É-U Ouest",            "USA Ovest",           "EUA Oeste"             } },
+	{ "WestUS2",          { "EEUU Oeste 2",       "US West 2",          "É-U Ouest 2",          "USA Ovest 2",         "EUA Oeste 2"           } },
+	{ "SouthCentralUS",   { "EEUU Centro Sur",    "US South Central",   "É-U Centre Sud",       "USA Centro Sud",      "EUA Centro-Sul"        } },
+	{ "NorthCentralUS",   { "EEUU Centro Norte",  "US North Central",   "É-U Centre Nord",      "USA Centro Nord",     "EUA Centro-Norte"      } },
+	{ "WestCentralUS",    { "EEUU Centro Oeste",  "US West Central",    "É-U Centre Ouest",     "USA Centro Ovest",    "EUA Centro-Oeste"      } },
+	{ "CanadaCentral",    { "Canadá Centro",      "Canada Central",     "Canada Centre",        "Canada Centro",       "Canadá Central"        } },
+	{ "CanadaEast",       { "Canadá Este",        "Canada East",        "Canada Est",           "Canada Est",          "Canadá Leste"          } },
+	{ "BrazilSouth",      { "Brasil Sur",         "Brazil South",       "Brésil Sud",           "Brasile Sud",         "Brasil Sul"            } },
+	{ "MexicoCentral",    { "México Centro",      "Mexico Central",     "Mexique Centre",       "Messico Centro",      "México Central"        } },
+	{ "JapanEast",        { "Japón Este",         "Japan East",         "Japon Est",            "Giappone Est",        "Japão Leste"           } },
+	{ "JapanWest",        { "Japón Oeste",        "Japan West",         "Japon Ouest",          "Giappone Ovest",      "Japão Oeste"           } },
+	{ "KoreaCentral",     { "Corea Centro",       "Korea Central",      "Corée Centre",         "Corea Centro",        "Coreia Central"        } },
+	{ "EastAsia",         { "Asia Este",          "East Asia",          "Asie Est",             "Asia Est",            "Ásia Oriental"         } },
+	{ "SoutheastAsia",    { "Asia Sudeste",       "Southeast Asia",     "Asie Sud-Est",         "Asia Sud-Est",        "Sudeste Asiático"      } },
+	{ "CentralIndia",     { "India Centro",       "Central India",      "Inde Centre",          "India Centro",        "Índia Central"         } },
+	{ "AustraliaEast",    { "Australia Este",     "Australia East",     "Australie Est",        "Australia Est",       "Austrália Leste"       } },
+	{ "AustraliaSouthEast",{"Australia Sudeste",  "Australia Southeast","Australie Sud-Est",    "Australia Sud-Est",   "Austrália Sudeste"     } },
+	{ "UAENorth",         { "Emiratos Norte",     "UAE North",          "Émirats Nord",         "Emirati Nord",        "Emirados Norte"        } },
+	{ "SouthAfricaNorth", { "Sudáfrica Norte",    "South Africa North", "Afrique du Sud Nord",  "Sudafrica Nord",      "África do Sul Norte"   } }
 };
-#define REGION_ES_N ((int)(sizeof(region_es)/sizeof(region_es[0])))
+#define REGIONES_N ((int)(sizeof(regiones)/sizeof(regiones[0])))
 
 /* SIN MIRAR MAYUSCULAS NI MINUSCULAS.
  *
@@ -504,8 +559,8 @@ static const char *region_bonito(const char *ms)
 {
 	int i;
 
-	for (i = 0; i < REGION_ES_N; i++)
-		if (igual_sin_caja(region_es[i].ms, ms)) return region_es[i].es;
+	for (i = 0; i < REGIONES_N; i++)
+		if (igual_sin_caja(regiones[i].ms, ms)) return trPick(regiones[i].n);
 
 	return ms;
 }
@@ -560,11 +615,16 @@ static void rebuild_idiomas(void)
 	 * aqui y no en su sitio para que no se pueda traducir la interfaz y
 	 * dejarse una lista a medias: un solo sitio que las rehace todas. */
 	for (i = 0; i < HUD_POS_N; i++)
-		hud_pos_name[i] = tr(hud_pos_txt[i].es, hud_pos_txt[i].en);
+		hud_pos_name[i] = trPick(hud_pos_txt[i].n);
 
 	for (i = 0; i < COMBOS_N; i++)
-		combo_name[i] = tr(combo_txt[i].es, combo_txt[i].en);
+		combo_name[i] = trPick(combo_txt[i].n);
 }
+
+/* Declarada aqui y definida abajo: aplicar_idioma() tiene que rehacer la
+ * lista de servidores, y esa vive con las regiones, 80 lineas mas abajo.
+ * Mover el bloque entero seria un cambio mas grande que la declaracion. */
+static void rebuild_regiones(void);
 
 /* Aplica los dos ajustes de idioma a quien corresponda. */
 static void aplicar_idioma(void)
@@ -578,14 +638,36 @@ static void aplicar_idioma(void)
 	 * cuanto toca el de los juegos una vez, deja de seguir: a partir de
 	 * ahi manda el suyo, que es lo que ha dicho que quiere.
 	 *
-	 * set_juego_cod vacio = nunca lo ha tocado. */
+	 * set_juego_cod vacio = nunca lo ha tocado.
+	 *
+	 * QUE IDIOMA DE JUEGO TOCA LO DICE i18n.h, NO ESTE if. Aqui ponia
+	 *
+	 *     xclocPorCodigo(set_idioma == IDIOMA_EN ? "en-US" : "es-ES")
+	 *
+	 * y con dos idiomas era correcto. Con cinco habria mandado a
+	 * franceses, italianos y brasilenos a jugar en castellano, callando,
+	 * porque "el que no es ingles" dejo de querer decir "castellano" el
+	 * dia que entro el tercero. Ahora cada idioma lleva el suyo en su
+	 * propia fila de IDIOMA_LISTA y no hay condicion que actualizar. */
 	if (set_juego_cod[0] == '\0') {
-		int i = xclocPorCodigo(set_idioma == IDIOMA_EN ? "en-US" : "es-ES");
+		int i = xclocPorCodigo(
+			i18nJuegoPorDefecto((gr33nIdioma)set_idioma));
 		if (i >= 0) set_juego_loc = i;
 	}
 
 	xclocSet(set_juego_loc);
 	rebuild_idiomas();
+
+	/* Y LA LISTA DE SERVIDORES, que tambien lleva texto traducido desde
+	 * que region_bonito() pasa por trPick().
+	 *
+	 * server_txt[] esta cacheado: se llena una vez, cuando auth trae las
+	 * regiones, y desde entonces se pinta de ahi. O sea que sin esta
+	 * linea cambiar de idioma dejaba TODA la lista de servidores en el
+	 * idioma anterior hasta cerrar sesion. Es exactamente el fallo que
+	 * habia que arreglar, reaparecido un nivel mas arriba por haber
+	 * traducido una tabla que alguien copia a otro sitio. */
+	rebuild_regiones();
 }
 
 /* LA UNICA ARITMETICA DE ESTE AJUSTE, en un sitio.
@@ -628,7 +710,10 @@ static void rebuild_regiones(void)
 	u32 i;
 
 	snprintf(server_txt[0], sizeof(server_txt[0]), "%s",
-	         TR("Automatico", "Automatic"));
+	         TR("Automatico", "Automatic",
+		"Automatique",
+		"Automatico",
+		"Automático"));
 	server_opt[0] = server_txt[0];
 	server_opt_n = 1;
 
@@ -710,10 +795,19 @@ static const char *account_status(void)
 	const authInfo *a = authStatus();
 
 	if (a->state == AUTH_WAITING || a->state == AUTH_REQUESTING)
-		return TR("entrando...", "signing in...");
+		return TR("entrando...", "signing in...",
+		"connexion...",
+		"accesso...",
+		"entrando...");
 
-	return authHaveToken() ? TR("sesion iniciada", "signed in")
-	                       : TR("sin iniciar", "not signed in");
+	return authHaveToken() ? TR("sesion iniciada", "signed in",
+		"connecté",
+		"accesso eseguito",
+		"conectado")
+	                       : TR("sin iniciar", "not signed in",
+		"non connecté",
+		"non connesso",
+		"desconectado");
 }
 
 static int set_dummy = 0;   /* SET_ACTION no guarda valor, pero el campo existe */
@@ -734,7 +828,10 @@ static const char *ping_status(void)
 	case PING_MIDIENDO:
 		pingProgreso(&h, &t);
 		snprintf(txt, sizeof(txt), "%s %d/%d",
-		         TR("midiendo", "measuring"), h, t);
+		         TR("midiendo", "measuring",
+		"mesure...",
+		"misurazione",
+		"medindo"), h, t);
 		return txt;
 
 	case PING_HECHO: {
@@ -743,15 +840,27 @@ static const char *ping_status(void)
 
 		if (mej >= 0 && authRegionCopy(mej, &r) == 0) {
 			snprintf(txt, sizeof(txt), "%s %s",
-			         TR("mejor:", "best:"), region_bonito(r.name));
+			         TR("mejor:", "best:",
+		"meilleur :",
+		"migliore:",
+		"melhor:"), region_bonito(r.name));
 			return txt;
 		}
-		return TR("ninguna contesto", "none answered");
+		return TR("ninguna contesto", "none answered",
+		"aucune réponse",
+		"nessuna risposta",
+		"nenhuma respondeu");
 	}
 
 	default:
-		return authRegionsN() ? TR("medir", "measure")
-		                      : TR("hace falta cuenta", "sign in first");
+		return authRegionsN() ? TR("medir", "measure",
+		"mesurer",
+		"misura",
+		"medir")
+		                      : TR("hace falta cuenta", "sign in first",
+		"connexion requise",
+		"accedi prima",
+		"entre primeiro");
 	}
 }
 
@@ -776,197 +885,368 @@ static int combo_hecho(const gr33nPad *pad)
 
 static const uiSetting settings[] = {
 	{
-		"Cuenta",
-		"Account",
-		"Entra con tu cuenta de Microsoft. La consola te da un codigo "
-		"corto y tu lo escribes en el movil: la contrasena no pasa por "
-		"aqui en ningun momento, que es justo para lo que sirve este "
-		"metodo. Lo que se guarda en la PS3 es un permiso que caduca y "
-		"que puedes retirar cuando quieras desde tu cuenta.",
-		"Sign in with your Microsoft account. The console gives you a "
-		"short code and you type it on your phone: your password never "
-		"passes through here, which is exactly what this method is for. "
-		"What stays on the PS3 is a permission that expires, and that you "
-		"can revoke from your account whenever you like.",
+		{ "Cuenta", "Account",
+		  "Compte", "Account", "Conta" },
+		{ "Entra con tu cuenta de Microsoft. La consola te da un codigo corto "
+		 "y tu lo escribes en el movil: la contrasena no pasa por aqui en "
+		 "ningun momento, que es justo para lo que sirve este metodo. Lo que "
+		 "se guarda en la PS3 es un permiso que caduca y que puedes retirar "
+		 "cuando quieras desde tu cuenta.",
+		  "Sign in with your Microsoft account. The console gives you a short "
+		 "code and you type it on your phone: your password never passes "
+		 "through here, which is exactly what this method is for. What stays "
+		 "on the PS3 is a permission that expires, and that you can revoke "
+		 "from your account whenever you like.",
+		  "Connecte-toi avec ton compte Microsoft. La console te donne un "
+		 "code court que tu saisis sur ton téléphone : ton mot de passe ne "
+		 "passe jamais par ici, et c'est précisément à ça que sert cette "
+		 "méthode. Ce qui reste sur la PS3 est une autorisation qui expire "
+		 "et que tu peux révoquer quand tu veux depuis ton compte.",
+		  "Accedi con il tuo account Microsoft. La console ti dà un codice "
+		 "breve che digiti sul telefono: la password non passa mai di qui, "
+		 "ed è esattamente lo scopo di questo metodo. Sulla PS3 resta un "
+		 "permesso che scade e che puoi revocare quando vuoi dal tuo "
+		 "account.",
+		  "Entre com sua conta Microsoft. O console te dá um código curto que "
+		 "você digita no celular: a senha nunca passa por aqui, que é "
+		 "justamente para isso que este método serve. O que fica no PS3 é "
+		 "uma permissão que expira e que você pode revogar quando quiser "
+		 "pela sua conta." },
 		SET_ACTION, &set_dummy, 0, 0, 0, NULL, 0, account_status, 0
 	},
 	{
-		"Idioma",
-		"Language",
-		"El idioma de GR33N. El de los juegos es el ajuste de abajo. "
-		"Solo hay dos porque la fuente esta dibujada a mano, pixel a "
-		"pixel: llega para el castellano y el ingles, y anadir ruso o "
-		"japones seria dibujar un alfabeto entero.",
-		"The language GR33N speaks. Your games get their own setting, "
-		"just below. There are only two because the font is drawn by "
-		"hand, pixel by pixel: it covers Spanish and English, and adding "
-		"Russian or Japanese would mean drawing a whole alphabet.",
+		{ "Idioma", "Language",
+		  "Langue", "Lingua", "Idioma" },
+		{ "El idioma de GR33N. El de los juegos es el ajuste de abajo. Hay "
+		 "cinco porque la fuente esta dibujada a mano, pixel a pixel: llega "
+		 "para las lenguas latinas, y anadir ruso o japones seria dibujar un "
+		 "alfabeto entero.",
+		  "The language GR33N speaks. Your games get their own setting, just "
+		 "below. There are five because the font is drawn by hand, pixel by "
+		 "pixel: it covers the Latin languages, and adding Russian or "
+		 "Japanese would mean drawing a whole alphabet.",
+		  "La langue de GR33N. Celle des jeux se règle juste en dessous. Il y "
+		 "en a cinq parce que la police est dessinée à la main, pixel par "
+		 "pixel : elle couvre les langues latines, et ajouter le russe ou le "
+		 "japonais reviendrait à dessiner un alphabet entier.",
+		  "La lingua di GR33N. Quella dei giochi si imposta qui sotto. Sono "
+		 "cinque perché il font è disegnato a mano, pixel per pixel: copre "
+		 "le lingue latine, e aggiungere il russo o il giapponese vorrebbe "
+		 "dire disegnare un alfabeto intero.",
+		  "O idioma do GR33N. O dos jogos é a opção logo abaixo. São cinco "
+		 "porque a fonte é desenhada à mão, pixel a pixel: cobre as línguas "
+		 "latinas, e acrescentar russo ou japonês seria desenhar um alfabeto "
+		 "inteiro." },
 		SET_CHOICE, &set_idioma, 0, IDIOMA_N - 1, 1,
 		idioma_opt, IDIOMA_N, NULL, 0
 	},
 	{
-		"Idioma de los juegos",
-		"Game language",
-		"En que idioma arrancan los juegos: voces, textos y teclado. "
-		"Tambien decide el idioma de los nombres y descripciones de la "
-		"biblioteca. Ojo, que pedirlo no lo garantiza: un juego que no "
-		"este doblado saldra en el idioma que tenga, normalmente ingles. "
-		"Se aplica a la proxima partida, no a la que ya este en marcha.",
-		"What language your games start in: voices, text and keyboard. "
-		"It also sets the language of the names and descriptions in your "
-		"library. Careful though, asking is not the same as getting: a "
-		"game with no dub will fall back to whatever it has, usually "
-		"English. It applies to your next session, not one already "
-		"running.",
+		{ "Idioma de los juegos", "Game language",
+		  "Langue des jeux", "Lingua dei giochi", "Idioma dos jogos" },
+		{ "En que idioma arrancan los juegos: voces, textos y teclado. "
+		 "Tambien decide el idioma de los nombres y descripciones de la "
+		 "biblioteca. Ojo, que pedirlo no lo garantiza: un juego que no este "
+		 "doblado saldra en el idioma que tenga, normalmente ingles. Se "
+		 "aplica a la proxima partida, no a la que ya este en marcha.",
+		  "What language your games start in: voices, text and keyboard. It "
+		 "also sets the language of the names and descriptions in your "
+		 "library. Careful though, asking is not the same as getting: a game "
+		 "with no dub will fall back to whatever it has, usually English. It "
+		 "applies to your next session, not one already running.",
+		  "La langue dans laquelle démarrent les jeux : voix, textes et "
+		 "clavier. Elle décide aussi de la langue des noms et des "
+		 "descriptions de la bibliothèque. Attention : demander ne garantit "
+		 "rien. Un jeu non doublé sortira dans la langue qu'il a, en général "
+		 "l'anglais. Ça s'applique à la prochaine partie, pas à celle en "
+		 "cours.",
+		  "In che lingua partono i giochi: voci, testi e tastiera. Decide "
+		 "anche la lingua dei nomi e delle descrizioni della libreria. "
+		 "Attenzione: chiederlo non lo garantisce. Un gioco non doppiato "
+		 "uscirà nella lingua che ha, di solito l'inglese. Vale dalla "
+		 "prossima partita, non da quella già avviata.",
+		  "Em que idioma os jogos iniciam: vozes, textos e teclado. Também "
+		 "define o idioma dos nomes e descrições da biblioteca. Atenção: "
+		 "pedir não garante. Um jogo sem dublagem sai no idioma que tiver, "
+		 "normalmente inglês. Vale para a próxima partida, não para a que já "
+		 "está rodando." },
 		SET_CHOICE, &set_juego_loc, 0, XCLOC_MAX - 1, 1,
 		xcloc_opt, XCLOC_MAX, NULL, 0
 	},
 	{
-		"Zona muerta",
-		"Stick deadzone",
-		"Cuanto hay que mover el stick antes de que cuente. Los mandos "
-		"con anos encima no vuelven del todo al centro: si el cursor se "
-		"va solo, sube esto; si los movimientos suaves no responden, "
-		"bajalo. Abajo tienes los cuatro ejes en vivo -- suelta el mando "
-		"y sube el valor hasta que se queden todos en verde.",
-		"How far the stick has to move before it counts. Pads with a few "
-		"years on them do not quite return to centre: if the cursor "
-		"drifts on its own, raise this; if gentle movements stop "
-		"responding, lower it. The four axes are shown live below -- put "
-		"the pad down and raise the value until they all sit green.",
+		{ "Zona muerta", "Stick deadzone",
+		  "Zone morte", "Zona morta", "Zona morta" },
+		{ "Cuanto hay que mover el stick antes de que cuente. Los mandos con "
+		 "anos encima no vuelven del todo al centro: si el cursor se va "
+		 "solo, sube esto; si los movimientos suaves no responden, bajalo. "
+		 "Abajo tienes los cuatro ejes en vivo -- suelta el mando y sube el "
+		 "valor hasta que se queden todos en verde.",
+		  "How far the stick has to move before it counts. Pads with a few "
+		 "years on them do not quite return to centre: if the cursor drifts "
+		 "on its own, raise this; if gentle movements stop responding, lower "
+		 "it. The four axes are shown live below -- put the pad down and "
+		 "raise the value until they all sit green.",
+		  "De combien il faut bouger le stick pour que ça compte. Les "
+		 "manettes qui ont quelques années ne reviennent pas tout à fait au "
+		 "centre : si le curseur part tout seul, augmente ; si les petits "
+		 "mouvements ne répondent plus, baisse. Les quatre axes sont "
+		 "affichés en direct en dessous -- pose la manette et monte la "
+		 "valeur jusqu'à ce qu'ils soient tous verts.",
+		  "Quanto va spostata la levetta perché conti. I pad con qualche anno "
+		 "non tornano del tutto al centro: se il cursore si muove da solo, "
+		 "alza questo valore; se i movimenti leggeri non rispondono, "
+		 "abbassalo. Sotto vedi i quattro assi in tempo reale -- posa il pad "
+		 "e alza il valore finché non sono tutti verdi.",
+		  "Quanto o analógico precisa se mover para contar. Controles com "
+		 "alguns anos não voltam totalmente ao centro: se o cursor anda "
+		 "sozinho, aumente; se os movimentos leves não respondem, diminua. "
+		 "Os quatro eixos aparecem ao vivo abaixo -- solte o controle e suba "
+		 "o valor até todos ficarem verdes." },
 		SET_RANGE, &set_deadzone, 0, 48, 2, NULL, 0, NULL, 0
 	},
 	{
-		"Intercambiar X y O",
-		"Swap X and O",
-		"En PS3 se acepta con X y se cancela con O. Si vienes de una "
-		"consola donde es al reves, o de un mando de Xbox, esto lo cambia "
-		"en todo el menu. A los juegos les sigue llegando lo que pulses "
-		"de verdad.",
-		"On PS3 you confirm with X and cancel with O. If you are coming "
-		"from a console where it is the other way round, or from an Xbox "
-		"pad, this flips it across the whole menu. Your games still "
-		"receive whatever you actually pressed.",
+		{ "Intercambiar X y O", "Swap X and O",
+		  "Inverser X et O", "Inverti X e O", "Trocar X e O" },
+		{ "En PS3 se acepta con X y se cancela con O. Si vienes de una "
+		 "consola donde es al reves, o de un mando de Xbox, esto lo cambia "
+		 "en todo el menu. A los juegos les sigue llegando lo que pulses de "
+		 "verdad.",
+		  "On PS3 you confirm with X and cancel with O. If you are coming "
+		 "from a console where it is the other way round, or from an Xbox "
+		 "pad, this flips it across the whole menu. Your games still receive "
+		 "whatever you actually pressed.",
+		  "Sur PS3 on valide avec X et on annule avec O. Si tu viens d'une "
+		 "console où c'est l'inverse, ou d'une manette Xbox, ça inverse dans "
+		 "tout le menu. Les jeux continuent de recevoir ce que tu appuies "
+		 "vraiment.",
+		  "Su PS3 si conferma con X e si annulla con O. Se vieni da una "
+		 "console dove è il contrario, o da un pad Xbox, questo lo inverte "
+		 "in tutto il menu. Ai giochi arriva comunque quello che premi "
+		 "davvero.",
+		  "No PS3 confirma-se com X e cancela-se com O. Se você vem de um "
+		 "console onde é o contrário, ou de um controle de Xbox, isto "
+		 "inverte no menu inteiro. Os jogos continuam recebendo o que você "
+		 "apertou de verdade." },
 		SET_TOGGLE, &set_swap_ok, 0, 0, 0, NULL, 0, NULL, 0
 	},
 	{
-		"Servidor",
-		"Server",
-		"A que centro de datos de xCloud te conectas. Elegir el que te "
-		"pilla lejos puede costarte 80 ms antes de empezar a jugar. La "
-		"lista te la da Microsoft al iniciar sesion, asi que sin cuenta "
-		"aqui solo veras Automatico. Los milisegundos son lo que tarda en "
-		"contestarte la region: no son la latencia jugando, pero son "
-		"buena parte de ella.",
-		"Which xCloud data centre you connect to. Picking a far one can "
-		"cost you 80 ms before you even start playing. Microsoft gives us "
-		"the list when you sign in, so with no account you will only see "
-		"Automatic here. The milliseconds are how long the region takes "
-		"to answer: not the latency you feel in game, but a good chunk "
-		"of it.",
+		{ "Servidor", "Server",
+		  "Serveur", "Server", "Servidor" },
+		{ "A que centro de datos de xCloud te conectas. Elegir el que te "
+		 "pilla lejos puede costarte 80 ms antes de empezar a jugar. La "
+		 "lista te la da Microsoft al iniciar sesion, asi que sin cuenta "
+		 "aqui solo veras Automatico. Los milisegundos son lo que tarda en "
+		 "contestarte la region: no son la latencia jugando, pero son buena "
+		 "parte de ella.",
+		  "Which xCloud data centre you connect to. Picking a far one can "
+		 "cost you 80 ms before you even start playing. Microsoft gives us "
+		 "the list when you sign in, so with no account you will only see "
+		 "Automatic here. The milliseconds are how long the region takes to "
+		 "answer: not the latency you feel in game, but a good chunk of it.",
+		  "À quel centre de données xCloud tu te connectes. En choisir un "
+		 "loin de chez toi peut coûter 80 ms avant même de jouer. Microsoft "
+		 "nous donne la liste à la connexion, donc sans compte tu ne verras "
+		 "qu'Automatique ici. Les millisecondes sont le temps que met la "
+		 "région à répondre : ce n'est pas la latence en jeu, mais une bonne "
+		 "part de celle-ci.",
+		  "A quale data center xCloud ti colleghi. Sceglierne uno lontano può "
+		 "costarti 80 ms prima ancora di giocare. La lista ce la dà "
+		 "Microsoft all'accesso, quindi senza account qui vedrai solo "
+		 "Automatico. I millisecondi sono il tempo che la regione impiega a "
+		 "rispondere: non sono la latenza in gioco, ma ne sono buona parte.",
+		  "A qual data center do xCloud você se conecta. Escolher um distante "
+		 "pode custar 80 ms antes mesmo de começar a jogar. A lista vem da "
+		 "Microsoft ao entrar, então sem conta você só verá Automático aqui. "
+		 "Os milissegundos são o tempo que a região leva para responder: não "
+		 "são a latência jogando, mas boa parte dela." },
 		SET_CHOICE, &set_server, 0, SERVERS_MAX - 1, 1,
 		server_opt, SERVERS_MAX, NULL, 0
 	},
 	{
-		"Medir latencia",
-		"Measure latency",
-		"Vuelve a medir todas las regiones. Se hace solo al iniciar "
-		"sesion; esto es para repetirlo cuando cambie la red, cuando "
-		"alguien se ponga a descargar algo, o simplemente por curiosidad. "
-		"Tres medidas por region y se queda la mejor, porque el ruido de "
-		"red solo suma.",
-		"Measures every region again. It runs on its own when you sign "
-		"in; this is for repeating it when your network changes, when "
-		"somebody starts a download, or just out of curiosity. Three "
-		"measurements per region and the best one wins, because network "
-		"noise only ever adds.",
+		{ "Medir latencia", "Measure latency",
+		  "Mesurer la latence", "Misura la latenza", "Medir latência" },
+		{ "Vuelve a medir todas las regiones. Se hace solo al iniciar sesion; "
+		 "esto es para repetirlo cuando cambie la red, cuando alguien se "
+		 "ponga a descargar algo, o simplemente por curiosidad. Tres medidas "
+		 "por region y se queda la mejor, porque el ruido de red solo suma.",
+		  "Measures every region again. It runs on its own when you sign in; "
+		 "this is for repeating it when your network changes, when somebody "
+		 "starts a download, or just out of curiosity. Three measurements "
+		 "per region and the best one wins, because network noise only ever "
+		 "adds.",
+		  "Remesure toutes les régions. Ça se fait tout seul à la connexion ; "
+		 "ceci sert à recommencer quand ton réseau change, quand quelqu'un "
+		 "lance un téléchargement, ou simplement par curiosité. Trois "
+		 "mesures par région et la meilleure gagne, parce que le bruit "
+		 "réseau ne fait qu'ajouter.",
+		  "Rimisura tutte le regioni. Si fa da solo all'accesso; questo serve "
+		 "a rifarlo quando cambia la rete, quando qualcuno avvia un "
+		 "download, o per semplice curiosità. Tre misure per regione e vince "
+		 "la migliore, perché il rumore di rete non fa che aggiungere.",
+		  "Mede todas as regiões de novo. Isso já acontece sozinho ao entrar; "
+		 "aqui é para repetir quando a rede mudar, quando alguém começar um "
+		 "download, ou por pura curiosidade. Três medidas por região e fica "
+		 "a melhor, porque ruído de rede só soma." },
 		SET_ACTION, &set_ping, 0, 0, 0, NULL, 0, ping_status, 0
 	},
 	{
-		"Mostrar juegos no disponibles",
-		"Show unavailable games",
-		"Por defecto la biblioteca solo ensena lo que puedes jugar: todo "
-		"lo que veas, arranca. Con esto puesto salen tambien los que no "
-		"entran en tu suscripcion, con un candado. Va bien para ojear el "
-		"catalogo entero, pero hay muchos mas de los que puedes jugar.",
-		"By default your library only shows what you can play: "
-		"everything you see will start. Turn this on and the ones "
-		"outside your subscription appear too, with a padlock. Handy for "
-		"browsing the whole catalogue, though there are a lot more of "
-		"them than there are games you can play.",
+		{ "Mostrar juegos no disponibles", "Show unavailable games",
+		  "Afficher les jeux indisponibles", "Mostra i giochi non disponibili", "Mostrar jogos indisponíveis" },
+		{ "Por defecto la biblioteca solo ensena lo que puedes jugar: todo lo "
+		 "que veas, arranca. Con esto puesto salen tambien los que no entran "
+		 "en tu suscripcion, con un candado. Va bien para ojear el catalogo "
+		 "entero, pero hay muchos mas de los que puedes jugar.",
+		  "By default your library only shows what you can play: everything "
+		 "you see will start. Turn this on and the ones outside your "
+		 "subscription appear too, with a padlock. Handy for browsing the "
+		 "whole catalogue, though there are a lot more of them than there "
+		 "are games you can play.",
+		  "Par défaut la bibliothèque ne montre que ce que tu peux jouer : "
+		 "tout ce que tu vois se lance. Avec ça, ceux qui ne sont pas dans "
+		 "ton abonnement apparaissent aussi, avec un cadenas. Pratique pour "
+		 "parcourir tout le catalogue, mais il y en a bien plus que de jeux "
+		 "jouables.",
+		  "Di norma la libreria mostra solo ciò che puoi giocare: tutto "
+		 "quello che vedi si avvia. Con questo attivo compaiono anche quelli "
+		 "fuori dal tuo abbonamento, con un lucchetto. Comodo per sfogliare "
+		 "tutto il catalogo, ma ce ne sono molti più di quelli giocabili.",
+		  "Por padrão a biblioteca só mostra o que você pode jogar: tudo que "
+		 "aparece inicia. Com isto ligado aparecem também os que não entram "
+		 "na sua assinatura, com um cadeado. Bom para folhear o catálogo "
+		 "inteiro, mas há muito mais deles do que jogos que você pode jogar." },
 		SET_TOGGLE, &set_show_all, 0, 0, 0, NULL, 0, NULL, 0
 	},
 	{
-		"Salir de un juego con",
-		"Quit a game with",
-		"Que combinacion cierra un juego. Nunca es un boton suelto, y con "
-		"razon: mientras juegas, cualquier boton es del juego, asi que "
-		"uno solo te sacaria de la partida cada vez que lo pulsaras. Se "
-		"mantiene el primero y se pulsa el segundo. Si eliges SELECT + "
-		"START, desactiva el ajuste de abajo o se pisaran.",
-		"Which combination closes a game. Never a single button, and for "
-		"good reason: while you play, every button belongs to the game, "
-		"so one on its own would end your session every time you pressed "
-		"it. Hold the first, press the second. If you pick SELECT + "
-		"START, turn off the setting below or the two will collide.",
+		{ "Salir de un juego con", "Quit a game with",
+		  "Quitter un jeu avec", "Esci da un gioco con", "Sair de um jogo com" },
+		{ "Que combinacion cierra un juego. Nunca es un boton suelto, y con "
+		 "razon: mientras juegas, cualquier boton es del juego, asi que uno "
+		 "solo te sacaria de la partida cada vez que lo pulsaras. Se "
+		 "mantiene el primero y se pulsa el segundo. Si eliges SELECT + "
+		 "START, desactiva el ajuste de abajo o se pisaran.",
+		  "Which combination closes a game. Never a single button, and for "
+		 "good reason: while you play, every button belongs to the game, so "
+		 "one on its own would end your session every time you pressed it. "
+		 "Hold the first, press the second. If you pick SELECT + START, turn "
+		 "off the setting below or the two will collide.",
+		  "Quelle combinaison ferme un jeu. Jamais un bouton seul, et pour "
+		 "cause : pendant que tu joues, chaque bouton appartient au jeu, "
+		 "donc un seul te sortirait de la partie à chaque appui. Tu "
+		 "maintiens le premier et tu appuies sur le second. Si tu choisis "
+		 "SELECT + START, désactive le réglage du dessous ou les deux se "
+		 "marcheront dessus.",
+		  "Quale combinazione chiude un gioco. Mai un tasto solo, e per un "
+		 "buon motivo: mentre giochi ogni tasto è del gioco, quindi uno da "
+		 "solo ti farebbe uscire dalla partita ogni volta che lo premi. "
+		 "Tieni premuto il primo e premi il secondo. Se scegli SELECT + "
+		 "START, disattiva l'impostazione qui sotto o le due si pesteranno i "
+		 "piedi.",
+		  "Qual combinação fecha um jogo. Nunca um botão sozinho, e com "
+		 "razão: enquanto você joga, qualquer botão é do jogo, então um só "
+		 "te tiraria da partida toda vez que apertasse. Segure o primeiro e "
+		 "aperte o segundo. Se escolher SELECT + START, desligue a opção "
+		 "abaixo ou as duas vão se atropelar." },
 		SET_CHOICE, &set_exit_combo, 0, COMBOS_N - 1, 1,
 		combo_name, COMBOS_N, NULL, 0
 	},
 	{
-		"Cerrar GR33N con START + SELECT",
-		"Quit GR33N with START + SELECT",
-		"El atajo para volver al XMB desde cualquier sitio. Quitalo si te "
-		"estorba, y quitalo seguro si has puesto SELECT + START para "
-		"salir de los juegos: si no, salir de una partida te cerraria "
-		"GR33N entero. Con esto apagado se sale por el XMB, como con "
-		"cualquier juego.",
-		"The shortcut back to the XMB from anywhere. Turn it off if it "
-		"gets in your way, and definitely turn it off if you set SELECT "
-		"+ START as your game exit: otherwise leaving a game would close "
-		"GR33N as well. With this off you quit through the XMB, like any "
-		"other game.",
+		{ "Cerrar GR33N con START + SELECT", "Quit GR33N with START + SELECT",
+		  "Quitter GR33N avec START + SELECT", "Chiudi GR33N con START + SELECT", "Fechar o GR33N com START + SELECT" },
+		{ "El atajo para volver al XMB desde cualquier sitio. Quitalo si te "
+		 "estorba, y quitalo seguro si has puesto SELECT + START para salir "
+		 "de los juegos: si no, salir de una partida te cerraria GR33N "
+		 "entero. Con esto apagado se sale por el XMB, como con cualquier "
+		 "juego.",
+		  "The shortcut back to the XMB from anywhere. Turn it off if it gets "
+		 "in your way, and definitely turn it off if you set SELECT + START "
+		 "as your game exit: otherwise leaving a game would close GR33N as "
+		 "well. With this off you quit through the XMB, like any other game.",
+		  "Le raccourci pour revenir au XMB depuis n'importe où. Désactive-le "
+		 "s'il te gêne, et désactive-le à coup sûr si tu as mis SELECT + "
+		 "START pour quitter les jeux : sinon, sortir d'une partie fermerait "
+		 "GR33N en entier. Avec ça désactivé, on quitte par le XMB, comme "
+		 "pour n'importe quel jeu.",
+		  "La scorciatoia per tornare all'XMB da qualsiasi punto. Disattivala "
+		 "se ti dà fastidio, e disattivala di sicuro se hai messo SELECT + "
+		 "START per uscire dai giochi: altrimenti uscire da una partita "
+		 "chiuderebbe GR33N per intero. Con questa spenta si esce dall'XMB, "
+		 "come con qualsiasi gioco.",
+		  "O atalho para voltar ao XMB de qualquer lugar. Desligue se "
+		 "atrapalhar, e desligue com certeza se você colocou SELECT + START "
+		 "para sair dos jogos: senão, sair de uma partida fecharia o GR33N "
+		 "inteiro. Com isto desligado sai-se pelo XMB, como em qualquer "
+		 "jogo." },
 		SET_TOGGLE, &set_quit_app, 0, 0, 0, NULL, 0, NULL, 0
 	},
 	{
-		"Debug",
-		"Debug",
-		"Enseña un panel con fps, estado de la red y rendimiento del "
-		"decodificador, y manda lo mismo al servidor de depuracion del "
-		"PC, que guarda cada sesion en un fichero. Tambien anade las "
-		"pantallas de prueba a la biblioteca. Si algo va mal, esto es lo "
-		"que deja rastro.",
-		"Shows a panel with fps, network state and decoder performance, "
-		"and sends the same data to the PC debug server, which keeps "
-		"every session in a file. It also adds the test screens to your "
-		"library. When something goes wrong, this is what leaves a "
-		"trail.",
+		{ "Debug", "Debug",
+		  "Débogage", "Debug", "Depuração" },
+		{ "Ensena un panel con fps, estado de la red y rendimiento del "
+		 "decodificador, y manda lo mismo al servidor de depuracion del PC, "
+		 "que guarda cada sesion en un fichero. Tambien anade las pantallas "
+		 "de prueba a la biblioteca. Si algo va mal, esto es lo que deja "
+		 "rastro.",
+		  "Shows a panel with fps, network state and decoder performance, and "
+		 "sends the same data to the PC debug server, which keeps every "
+		 "session in a file. It also adds the test screens to your library. "
+		 "When something goes wrong, this is what leaves a trail.",
+		  "Affiche un panneau avec les fps, l'état du réseau et les "
+		 "performances du décodeur, et envoie la même chose au serveur de "
+		 "débogage du PC, qui garde chaque session dans un fichier. Ça "
+		 "ajoute aussi les écrans de test à la bibliothèque. Quand quelque "
+		 "chose se passe mal, c'est ça qui laisse une trace.",
+		  "Mostra un pannello con fps, stato della rete e prestazioni del "
+		 "decoder, e manda le stesse cose al server di debug del PC, che "
+		 "salva ogni sessione in un file. Aggiunge anche le schermate di "
+		 "test alla libreria. Quando qualcosa va storto, è questo che lascia "
+		 "traccia.",
+		  "Mostra um painel com fps, estado da rede e desempenho do "
+		 "decodificador, e manda a mesma coisa para o servidor de depuração "
+		 "do PC, que guarda cada sessão num arquivo. Também adiciona as "
+		 "telas de teste à biblioteca. Quando algo dá errado, é isto que "
+		 "deixa rastro." },
 		SET_TOGGLE, &set_debug, 0, 0, 0, NULL, 0, NULL, 0
 	},
 
 	/* Los dos de abajo son del panel de depuracion, asi que van DEBAJO de
-	 * Debug y solo se ven con Debug puesto. Estaban en medio de los
-	 * ajustes normales, con nombres que no decian de que panel hablaban, y
-	 * ofreciendo mover una cosa que quien lee eso ni siquiera ve. */
+	 * Debug y solo se ven con Debug puesto. */
 	{
-		"Tamaño del panel de depuracion",
-		"Debug panel size",
-		"Como de grande sale el panel de estadisticas. A 1 cabe todo pero "
-		"hay que acercarse a la tele; a 3 se lee desde el sofa pero tapa "
-		"media pantalla. Solo afecta a ese panel.",
-		"How big the statistics panel is. At 1 everything fits but you "
-		"have to walk up to the TV; at 3 you can read it from the sofa "
-		"but it covers half the screen. It only affects that panel.",
+		{ "Tamaño del panel de depuracion", "Debug panel size",
+		  "Taille du panneau de débogage", "Dimensione del pannello di debug", "Tamanho do painel de depuração" },
+		{ "Como de grande sale el panel de estadisticas. A 1 cabe todo pero "
+		 "hay que acercarse a la tele; a 3 se lee desde el sofa pero tapa "
+		 "media pantalla. Solo afecta a ese panel.",
+		  "How big the statistics panel is. At 1 everything fits but you have "
+		 "to walk up to the TV; at 3 you can read it from the sofa but it "
+		 "covers half the screen. It only affects that panel.",
+		  "La taille du panneau de statistiques. À 1 tout tient mais il faut "
+		 "s'approcher de la télé ; à 3 ça se lit du canapé mais ça couvre la "
+		 "moitié de l'écran. Ça n'affecte que ce panneau.",
+		  "Quanto è grande il pannello delle statistiche. A 1 ci sta tutto ma "
+		 "devi avvicinarti alla TV; a 3 si legge dal divano ma copre mezzo "
+		 "schermo. Riguarda solo quel pannello.",
+		  "O tamanho do painel de estatísticas. Em 1 cabe tudo mas você "
+		 "precisa chegar perto da TV; em 3 dá para ler do sofá mas cobre "
+		 "meia tela. Só afeta esse painel." },
 		SET_RANGE, &set_hud_scale, 1, 3, 1, NULL, 0, NULL, 1
 	},
 	{
-		"Esquina del panel de depuracion",
-		"Debug panel corner",
-		"En que esquina se pega el panel de estadisticas. Util cuando lo "
-		"que quieres mirar esta justo debajo: mueves el panel en vez de "
-		"la cabeza.",
-		"Which corner the statistics panel sticks to. Useful when the "
-		"thing you want to look at is right underneath it: move the "
-		"panel instead of your head.",
+		{ "Esquina del panel de depuracion", "Debug panel corner",
+		  "Coin du panneau de débogage", "Angolo del pannello di debug", "Canto do painel de depuração" },
+		{ "En que esquina se pega el panel de estadisticas. Util cuando lo "
+		 "que quieres mirar esta justo debajo: mueves el panel en vez de la "
+		 "cabeza.",
+		  "Which corner the statistics panel sticks to. Useful when the thing "
+		 "you want to look at is right underneath it: move the panel instead "
+		 "of your head.",
+		  "Dans quel coin se colle le panneau de statistiques. Utile quand ce "
+		 "que tu veux regarder est juste dessous : tu déplaces le panneau au "
+		 "lieu de la tête.",
+		  "In quale angolo si attacca il pannello delle statistiche. Utile "
+		 "quando quello che vuoi guardare sta proprio sotto: sposti il "
+		 "pannello invece della testa.",
+		  "Em qual canto o painel de estatísticas fica. Útil quando o que "
+		 "você quer ver está bem embaixo: você move o painel em vez da "
+		 "cabeça." },
 		SET_CHOICE, &set_hud_pos, 0, HUD_POS_N - 1, 1,
 		hud_pos_name, HUD_POS_N, NULL, 1
 	}
@@ -1815,13 +2095,92 @@ static void draw_check(gr33nSurface *s, int x, int y, int size, u32 col)
 		gfxFillRect(s, x + size / 3 + i, y + size / 2 + size / 3 - i, t, t, col);
 }
 
+/* EL TEXTO DE LA BARRA SUPERIOR CUANDO TODAVIA NO HAY PERFIL.
+ *
+ * Es una funcion y no dos cadenas sueltas porque hacen falta en DOS
+ * sitios: uno mide cuanto ocupa para repartir el hueco de las pestanas, y
+ * otro lo pinta. Estaban escritas a mano las dos veces y sin traducir; al
+ * traducirlas por separado el ancho reservado habria dejado de cuadrar
+ * con el texto pintado en cuanto el frances ocupara mas que el
+ * castellano, y las pestanas se habrian metido debajo del avatar.
+ *
+ * Dos copias de la misma cadena es la version pequena de las dos listas
+ * paralelas: se separan igual, solo que aqui el sintoma es un pixel. */
+static const char *perfil_msg(void)
+{
+	/* LOS CUATRO ESTADOS DICEN CUATRO COSAS DISTINTAS.
+	 *
+	 * Esto preguntaba solo authHaveToken() --o sea "¿existe el fichero de
+	 * token?"-- y nunca miraba como iba el perfil. Resultado: TRES de los
+	 * cuatro estados pintaban "Cargando perfil...".
+	 *
+	 *   PROF_OK       el gamertag           (no pasa por aqui)
+	 *   PROF_WORKING  "Cargando perfil..."  correcto
+	 *   PROF_FAILED   "Cargando perfil..."  MENTIRA: fallo, y con mensaje
+	 *   PROF_NONE     "Cargando perfil..."  MENTIRA: ni ha empezado
+	 *
+	 * O sea que "se queda en cargando perfil" no era un sintoma: eran
+	 * tres fallos distintos disfrazados del mismo. La respuesta plausible
+	 * otra vez, y en el sitio donde mas cuesta, porque deja al usuario
+	 * mirando una pantalla que dice que algo va bien.
+	 *
+	 * PROF_NONE SIGUE SIENDO DOS COSAS, y por eso hay un if de mas.
+	 * Como prof es static, nace a cero, que es PROF_NONE: entre authInit()
+	 * y la primera vuelta del hilo hay una ventana en la que el estado es
+	 * PROF_NONE aunque haya token y el perfil este a punto de cargarse.
+	 * Pintar ahi "No existe token" seria parpadear una mentira en cada
+	 * arranque. Con token = va a empezar; sin token = de verdad no hay.
+	 *
+	 * (El otro PROF_NONE, el de "hay token pero no se lee", ya no existe:
+	 * ahora es PROF_FAILED con su mensaje. Ver run_profile en auth.c.) */
+	/* Sin caida implicita de un case a otro, y no por estilo: el
+	 * -Wimplicit-fallthrough que enciende -Wextra solo se calla con un
+	 * comentario EN INGLES ("fall through"), y aqui los comentarios van
+	 * en castellano. Un aviso que sale en cada compilacion es un aviso
+	 * que se deja de leer. */
+	switch (authProfileState()) {
+	case PROF_FAILED:
+		return TR("Error al cargar perfil (ver log)",
+		          "Profile failed to load (see log)",
+		          "Échec du profil (voir le journal)",
+		          "Caricamento profilo fallito (vedi log)",
+		          "Falha ao carregar o perfil (ver log)");
+
+	case PROF_NONE:
+		if (!authHaveToken())
+			return TR("No existe token", "No token saved",
+			          "Aucun jeton enregistré", "Nessun token salvato",
+			          "Nenhum token salvo");
+		break;   /* hay token: el hilo no ha arrancado todavia */
+
+	default:
+		break;   /* PROF_WORKING, y PROF_OK que no llega hasta aqui */
+	}
+
+	return TR("Cargando perfil...", "Loading profile...",
+	          "Chargement du profil...", "Caricamento profilo...",
+	          "Carregando perfil...");
+}
+
 static void draw_topbar(gr33nSurface *s)
 {
 	const char *tab_name[TAB_COUNT] = {
-		TR("Juegos",    "Games"),
-		TR("Favoritos", "Favourites"),
-		TR("Ajustes",   "Settings"),
-		TR("Pruebas",   "Tests")
+		TR("Juegos",    "Games",
+		"Jeux",
+		"Giochi",
+		"Jogos"),
+		TR("Favoritos", "Favourites",
+		"Favoris",
+		"Preferiti",
+		"Favoritos"),
+		TR("Ajustes",   "Settings",
+		"Réglages",
+		"Impostazioni",
+		"Configurações"),
+		TR("Pruebas",   "Tests",
+		"Tests",
+		"Test",
+		"Testes")
 	};
 	int i, x = 300, n = TAB_N, sum = 0, gap, prof_left;
 
@@ -1840,7 +2199,7 @@ static void draw_topbar(gr33nSurface *s)
 	 * queda. */
 	prof_left = prof_have
 	          ? W - 32 - 44 - 16 - textWidth(3, prof_tag) - 24
-	          : W - 32 - textWidth(2, "Cargando perfil...") - 24;
+	          : W - 32 - textWidth(2, perfil_msg()) - 24;
 
 	for (i = 0; i < n; i++) sum += textWidth(3, tab_name[i]);
 
@@ -1887,8 +2246,7 @@ static void draw_topbar(gr33nSurface *s)
 			textDraw(s, rx - tw, 12, 3, COL_TEXT, prof_tag);
 			textDraw(s, rx - textWidth(2, sc), 38, 2, COL_GREEN_DIM, sc);
 		} else {
-			const char *msg = authHaveToken() ? "Cargando perfil..."
-			                                  : "Sin sesion";
+			const char *msg = perfil_msg();
 
 			textDraw(s, rx - textWidth(2, msg), 28, 2, COL_TEXT_DIM, msg);
 		}
@@ -1977,7 +2335,10 @@ static void rebuild_genres(void)
 	if (!t) return;
 
 	genres_n = 1;
-	snprintf(genres[0], sizeof(genres[0]), "%s", TR("Todos", "All"));
+	snprintf(genres[0], sizeof(genres[0]), "%s", TR("Todos", "All",
+		"Tous",
+		"Tutti",
+		"Todos"));
 
 	for (i = 0; i < n && genres_n < GENRES_MAX; i++) {
 		if (!t[i].genre[0]) continue;
@@ -2261,19 +2622,44 @@ static void draw_grid(gr33nSurface *s)
 		 * biblioteca" en Favoritos, cuando el catalogo lleva rato
 		 * cargado, es sencillamente falso. */
 		if (tab == TAB_FAVS && ci->state == CAT_OK)
-			msg = "Todavia no has marcado ningun favorito. Triangulo "
-			      "sobre un juego.";
+			msg = TR("Todavia no has marcado ningun favorito. "
+			         "Triangulo sobre un juego.",
+			         "You have not marked any favourites yet. "
+			         "Triangle on a game.",
+			         "Tu n'as encore aucun favori. "
+			         "Triangle sur un jeu.",
+			         "Non hai ancora nessun preferito. "
+			         "Triangolo su un gioco.",
+			         "Você ainda não marcou nenhum favorito. "
+			         "Triângulo sobre um jogo.");
 		else if (genre_sel > 0 && ci->state == CAT_OK)
-			msg = "Ningun juego con ese filtro. Cuadrado para cambiarlo.";
+			msg = TR("Ningun juego con ese filtro. Cuadrado para "
+			         "cambiarlo.",
+			         "No games with that filter. Square to change it.",
+			         "Aucun jeu avec ce filtre. Carré pour le changer.",
+			         "Nessun gioco con questo filtro. Quadrato per "
+			         "cambiarlo.",
+			         "Nenhum jogo com esse filtro. Quadrado para "
+			         "trocar.");
 		else if (ci->state == CAT_FAILED)
 			msg = ci->err;
 		else if (ci->state == CAT_OK)
 			msg = TR("Ningun juego disponible con tu suscripcion.",
-			         "No games available with your subscription.");
+			         "No games available with your subscription.",
+		"Aucun jeu disponible avec ton abonnement.",
+		"Nessun gioco disponibile con il tuo abbonamento.",
+		"Nenhum jogo disponível na sua assinatura.");
 		else if (authHaveToken())
-			msg = "Cargando biblioteca...";
+			msg = TR("Cargando biblioteca...", "Loading library...",
+			         "Chargement de la bibliothèque...",
+			         "Caricamento libreria...",
+			         "Carregando biblioteca...");
 		else
-			msg = "Inicia sesion en Ajustes para ver tus juegos.";
+			msg = TR("Inicia sesion en Ajustes para ver tus juegos.",
+			         "Sign in from Settings to see your games.",
+			         "Connecte-toi dans Réglages pour voir tes jeux.",
+			         "Accedi da Impostazioni per vedere i tuoi giochi.",
+			         "Entre em Configurações para ver seus jogos.");
 
 		/* Sin nada que enseñar no hay nada cerca. Si no se dice, la cache
 		 * sigue protegiendo la pagina de la ultima vez. */
@@ -2480,7 +2866,10 @@ static void draw_ficha(gr33nSurface *s)
 	if (g->entitled) {
 		gfxFillRect(s, tx, cy + 110, 220, 52, COL_GREEN);
 		{
-			const char *lbl = TR("Jugar", "Play");
+			const char *lbl = TR("Jugar", "Play",
+		"Jouer",
+		"Gioca",
+		"Jogar");
 			textDraw(s, tx + (220 - textWidth(3, lbl)) / 2,
 			         cy + 110 + (52 - TEXT_GLYPH_H * 3) / 2, 3,
 			         COL_BLACK, lbl);
@@ -2490,7 +2879,10 @@ static void draw_ficha(gr33nSurface *s)
 		gfxRect(s, tx, cy + 110, 380, 52, 2, COL_WARN);
 		textDraw(s, tx + 16, cy + 126, 2, COL_WARN,
 		         TR("No incluido en tu suscripcion",
-		            "Not included in your subscription"));
+		            "Not included in your subscription",
+		"Non inclus dans ton abonnement",
+		"Non incluso nel tuo abbonamento",
+		"Não incluído na sua assinatura"));
 	}
 
 	if (g->program[0])
@@ -2544,9 +2936,15 @@ static void draw_ficha(gr33nSurface *s)
 			textDraw(s, 48, dy + 4, 2, COL_TEXT_DIM,
 			         g->detailed
 			             ? TR("Este juego no trae descripcion.",
-			                  "This game has no description.")
+			                  "This game has no description.",
+		"Ce jeu n'a pas de description.",
+		"Questo gioco non ha una descrizione.",
+		"Este jogo não tem descrição.")
 			             : TR("Cargando descripcion...",
-			                  "Loading description..."));
+			                  "Loading description...",
+		"Chargement de la description...",
+		"Caricamento descrizione...",
+		"Carregando descrição..."));
 		}
 	}
 
@@ -2568,36 +2966,54 @@ static void draw_ficha(gr33nSurface *s)
 			if (ficha_msg && !g->entitled)
 				snprintf(line, sizeof(line),
 				         TR("Sin derecho a este juego: no se pide maquina.",
-				    "You are not entitled to this game: no machine requested."));
+				    "You are not entitled to this game: no machine requested.",
+		"Tu n'as pas les droits sur ce jeu : aucune machine demandée.",
+		"Non hai i diritti su questo gioco: nessuna macchina richiesta.",
+		"Você não tem direito a este jogo: nenhuma máquina solicitada."));
 			break;
 
 		case SES_ASKING:
 			snprintf(line, sizeof(line),
 			         TR("Pidiendo una maquina a xCloud...",
-			            "Asking xCloud for a machine..."));
+			            "Asking xCloud for a machine...",
+		"Demande d'une machine à xCloud...",
+		"Richiesta di una macchina a xCloud...",
+		"Pedindo uma máquina ao xCloud..."));
 			break;
 
 		case SES_QUEUED:
 			if (sn->wait_s)
 				snprintf(line, sizeof(line),
 				         TR("En cola: %s (unos %u s)",
-				            "In queue: %s (about %u s)"),
+				            "In queue: %s (about %u s)",
+		"File d'attente : %s (environ %u s)",
+		"In coda: %s (circa %u s)",
+		"Na fila: %s (cerca de %u s)"),
 				         sn->server_state, (unsigned)sn->wait_s);
 			else
-				snprintf(line, sizeof(line), TR("En cola: %s", "In queue: %s"),
+				snprintf(line, sizeof(line), TR("En cola: %s", "In queue: %s",
+		"File d'attente : %s",
+		"In coda: %s",
+		"Na fila: %s"),
 				         sn->server_state);
 			break;
 
 		case SES_CONNECTING:
 			snprintf(line, sizeof(line),
 			         TR("Diciendole a Microsoft quien eres...",
-			            "Telling Microsoft who you are..."));
+			            "Telling Microsoft who you are...",
+		"On dit à Microsoft qui tu es...",
+		"Stiamo dicendo a Microsoft chi sei...",
+		"Dizendo à Microsoft quem você é..."));
 			break;
 
 		case SES_PROVISIONING:
 			snprintf(line, sizeof(line),
 			         TR("Preparando la maquina: %s (%u)",
-			            "Getting the machine ready: %s (%u)"),
+			            "Getting the machine ready: %s (%u)",
+		"Préparation de la machine : %s (%u)",
+		"Preparazione della macchina: %s (%u)",
+		"Preparando a máquina: %s (%u)"),
 			         sn->server_state[0] ? sn->server_state : "...",
 			         (unsigned)sn->polls);
 			break;
@@ -2605,7 +3021,10 @@ static void draw_ficha(gr33nSurface *s)
 		case SES_CONFIG:
 			snprintf(line, sizeof(line),
 			         TR("Pidiendo la configuracion...",
-			            "Requesting the configuration..."));
+			            "Requesting the configuration...",
+		"Demande de la configuration...",
+		"Richiesta della configurazione...",
+		"Pedindo a configuração..."));
 			break;
 
 		case SES_READY:
@@ -2615,7 +3034,10 @@ static void draw_ficha(gr33nSurface *s)
 				         TR("Maquina lista en %u ms (%s:%u es relleno). "
 				            "Falta el video.",
 				            "Machine ready in %u ms (%s:%u is a "
-				            "placeholder). Video still missing."),
+				            "placeholder). Video still missing.",
+		"Machine prête en %u ms (%s:%u est un bouche-trou). Il manque la vidéo.",
+		"Macchina pronta in %u ms (%s:%u è un segnaposto). Manca il video.",
+		"Máquina pronta em %u ms (%s:%u é provisório). Falta o vídeo."),
 				         (unsigned)sn->ms, sn->server_ip,
 				         (unsigned)sn->server_port);
 			else
@@ -2623,7 +3045,10 @@ static void draw_ficha(gr33nSurface *s)
 				         TR("Maquina lista en %u ms. Falta WebRTC: mira "
 				            "el log.",
 				            "Machine ready in %u ms. WebRTC still "
-				            "missing: check the log."),
+				            "missing: check the log.",
+		"Machine prête en %u ms. Il manque WebRTC : regarde le journal.",
+		"Macchina pronta in %u ms. Manca WebRTC: guarda il log.",
+		"Máquina pronta em %u ms. Falta WebRTC: veja o log."),
 				         (unsigned)sn->ms);
 			break;
 
@@ -2646,10 +3071,17 @@ static void draw_library(gr33nSurface *s)
 
 	if (catalog_n == 0) {
 		textDraw(s, LIST_X + 24, CONTENT_Y + 28, 2, COL_TEXT_DIM,
-		         TR("Sin juegos", "No games"));
+		         TR("Sin juegos", "No games",
+		"Aucun jeu",
+		"Nessun gioco",
+		"Nenhum jogo"));
 		textWrap(s, LIST_X + 24, CONTENT_Y + 60, 2, COL_TEXT_DIM,
 		         LIST_W - 48, 26, 8,
-		         "No hay ningun juego disponible para lanzar.");
+		         TR("No hay ningun juego disponible para lanzar.",
+		            "There are no games available to launch.",
+		            "Aucun jeu disponible à lancer.",
+		            "Nessun gioco disponibile da avviare.",
+		            "Nenhum jogo disponível para iniciar."));
 	}
 
 	/* Se cuenta por filas visibles, no por indice absoluto. Aparte de
@@ -2671,7 +3103,7 @@ static void draw_library(gr33nSurface *s)
 
 			textDraw(s, LIST_X + 24, ry + (ROW_H - TEXT_GLYPH_H * 3) / 2, 3,
 			         sel ? COL_GREEN : COL_TEXT,
-		         tr(catalog[idx]->name, catalog[idx]->name_en));
+		         trPick(catalog[idx]->name));
 		}
 	}
 
@@ -2679,7 +3111,9 @@ static void draw_library(gr33nSurface *s)
 	gfxFillRect(s, DET_X, CONTENT_Y, DET_W, CONTENT_H, COL_PANEL);
 
 	if (catalog_n == 0) {
-		const char *msg = "Nada que mostrar";
+		const char *msg = TR("Nada que mostrar", "Nothing to show",
+		                     "Rien à afficher", "Niente da mostrare",
+		                     "Nada para mostrar");
 		textDraw(s, DET_X + (DET_W - textWidth(3, msg)) / 2,
 		         CONTENT_Y + CONTENT_H / 2 - 10, 3, COL_TEXT_DIM, msg);
 		return;
@@ -2692,14 +3126,17 @@ static void draw_library(gr33nSurface *s)
 
 		draw_cover(s, cx, cy, cs, t);
 
-		textDraw(s, tx, cy + 6, 4, COL_TEXT, tr(t->name, t->name_en));
+		textDraw(s, tx, cy + 6, 4, COL_TEXT, trPick(t->name));
 		textDraw(s, tx, cy + 52, 2, COL_TEXT_DIM,
-		         tr(t->publisher, t->publisher_en));
+		         trPick(t->publisher));
 
 		/* Boton jugar */
 		gfxFillRect(s, tx, cy + 110, 220, 52, COL_GREEN);
 		{
-			const char *lbl = TR("Jugar", "Play");
+			const char *lbl = TR("Jugar", "Play",
+		"Jouer",
+		"Gioca",
+		"Jogar");
 			textDraw(s, tx + (220 - textWidth(3, lbl)) / 2,
 			         cy + 110 + (52 - TEXT_GLYPH_H * 3) / 2, 3, COL_BLACK, lbl);
 		}
@@ -2709,7 +3146,7 @@ static void draw_library(gr33nSurface *s)
 		gfxFillRect(s, cx, cy + cs + 32, DET_W - 64, 2, COL_LINE);
 
 		textWrap(s, cx, cy + cs + 56, 2, COL_TEXT_DIM,
-		         DET_W - 64, 28, 8, tr(t->desc, t->desc_en));
+		         DET_W - 64, 28, 8, trPick(t->desc));
 	}
 }
 
@@ -2768,7 +3205,7 @@ static void draw_settings(gr33nSurface *s)
 			gfxFillRect(s, LIST_X, ry, 5, SET_ROW_H, COL_GREEN);
 		}
 
-		textDraw(s, LIST_X + 24, ty, 3, fg, tr(st->name, st->name_en));
+		textDraw(s, LIST_X + 24, ty, 3, fg, trPick(st->name));
 
 		switch (st->kind) {
 		case SET_ACTION: {
@@ -2903,7 +3340,7 @@ static void draw_settings(gr33nSurface *s)
 
 		desc_y += textWrap(s, LIST_X + 24, desc_y, 2, COL_TEXT_DIM,
 		                   W - LIST_X * 2 - 48, 28, lines,
-		                   tr(cur->desc, cur->desc_en)) * 28;
+		                   trPick(cur->desc)) * 28;
 
 		if (axes) {
 			int x = LIST_X + 24;
@@ -2930,26 +3367,41 @@ void uiDraw(gr33nSurface *s)
 			draw_library(s);
 			snprintf(hints, sizeof(hints),
 			         TR("%s Lanzar    Arriba/Abajo Mover    L1/R1 Pestana%s",
-			            "%s Launch    Up/Down Move    L1/R1 Tab%s"),
+			            "%s Launch    Up/Down Move    L1/R1 Tab%s",
+		"%s Lancer    Haut/Bas Naviguer    L1/R1 Onglet%s",
+		"%s Avvia    Su/Giù Naviga    L1/R1 Scheda%s",
+		"%s Iniciar    Cima/Baixo Mover    L1/R1 Aba%s"),
 			         ok_glyph(),
 			         set_quit_app ? TR("    START+SELECT Salir",
-			                           "    START+SELECT Quit") : "");
+			                           "    START+SELECT Quit",
+		"    START+SELECT Quitter",
+		"    START+SELECT Esci",
+		"    START+SELECT Sair") : "");
 		} else if (tab == TAB_SETTINGS) {
 			draw_settings(s);
 			snprintf(hints, sizeof(hints),
 			         TR("Izq/Der Cambiar    Arriba/Abajo Mover    "
 			            "L1/R1 Pestana%s",
 			            "Left/Right Change    Up/Down Move    "
-			            "L1/R1 Tab%s"),
+			            "L1/R1 Tab%s",
+		"Gauche/Droite Modifier    Haut/Bas Naviguer    L1/R1 Onglet%s",
+		"Sin./Des. Modifica    Su/Giù Naviga    L1/R1 Scheda%s",
+		"Esq./Dir. Alterar    Cima/Baixo Mover    L1/R1 Aba%s"),
 			         set_quit_app ? TR("    START+SELECT Salir",
-			                           "    START+SELECT Quit") : "");
+			                           "    START+SELECT Quit",
+		"    START+SELECT Quitter",
+		"    START+SELECT Esci",
+		"    START+SELECT Sair") : "");
 		} else if (in_ficha) {
 			draw_ficha(s);
 			snprintf(hints, sizeof(hints),
 			         TR("Stick der. Descripcion    /\\ Favorito    "
 			            "%s Volver",
 			            "Right stick Description    /\\ Favourite    "
-			            "%s Back"), back_glyph());
+			            "%s Back",
+		"Stick droit Description    /\\ Favori    %s Retour",
+		"Stick destro Descrizione    /\\ Preferito    %s Indietro",
+		"Anal. direito Descrição    /\\ Favorito    %s Voltar"), back_glyph());
 		} else {
 			draw_grid(s);
 
@@ -2957,11 +3409,20 @@ void uiDraw(gr33nSurface *s)
 			         TR("%s Ficha    [] %s    /\\ Favorito    "
 			            "%u juegos    L1/R1 Pestana",
 			            "%s Details    [] %s    /\\ Favourite    "
-			            "%u games    L1/R1 Tab"),
+			            "%u games    L1/R1 Tab",
+		"%s Fiche    [] %s    /\\ Favori    %u jeux    L1/R1 Onglet",
+		"%s Scheda    [] %s    /\\ Preferito    %u giochi    L1/R1 Scheda",
+		"%s Detalhes    [] %s    /\\ Favorito    %u jogos    L1/R1 Aba"),
 			         ok_glyph(),
-			         genre_sel == 0 ? (show_all ? TR("Todos", "All")
+			         genre_sel == 0 ? (show_all ? TR("Todos", "All",
+		"Tous",
+		"Tutti",
+		"Todos")
 			                                    : TR("En tu suscripcion",
-			                                         "In your subscription"))
+			                                         "In your subscription",
+		"Dans ton abonnement",
+		"Nel tuo abbonamento",
+		"Na sua assinatura"))
 			                        : genres[genre_sel],
 			         (unsigned)view_n);
 		}
@@ -2989,7 +3450,10 @@ void uiDrawStreamHint(gr33nSurface *s)
 			snprintf(msg, sizeof(msg), "SELECT + %s para volver",
 			         back_glyph());
 		else
-			snprintf(msg, sizeof(msg), TR("%s para volver", "%s to go back"),
+			snprintf(msg, sizeof(msg), TR("%s para volver", "%s to go back",
+		"%s pour revenir",
+		"%s per tornare",
+		"%s para voltar"),
 			         combo_name[i]);
 	}
 

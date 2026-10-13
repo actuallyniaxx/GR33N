@@ -1,7 +1,9 @@
 /* GR33N - fuente 5x7 empotrada y primitivas de dibujo.
  *
  * Cada glifo son 5 bytes, uno por columna. En cada byte, el bit 0 es la
- * fila de arriba. ASCII 32..122 (espacio .. 'z').
+ * fila de arriba. ASCII 32..122 (espacio .. 'z'), mas la tabla
+ * font_extra de mas abajo, indexada por punto de codigo, con lo que
+ * necesitan el castellano, el frances, el italiano y el portugues.
  */
 
 #include <stdio.h>
@@ -58,7 +60,52 @@ static const fontExtra font_extra[] = {
 	{ 0xBF, {0x30,0x48,0x45,0x40,0x20} },   /* ¿ */
 	{ 0xA1, {0x00,0x00,0x7D,0x00,0x00} },   /* ¡ */
 
-	{ 0xB0, {0x00,0x07,0x05,0x07,0x00} }    /* grado */
+	{ 0xB0, {0x00,0x07,0x05,0x07,0x00} },   /* grado */
+
+	/* --------------------------------------------------------------
+	 * FRANCES, ITALIANO Y PORTUGUES
+	 * --------------------------------------------------------------
+	 *
+	 * Estos catorce no se eligieron por idioma sino CONTANDO: un script
+	 * recorre todas las cadenas de ui.c, main.c, session.c e i18n.h,
+	 * saca los codepoints que no son ASCII y los resta de esta tabla.
+	 * Lo que queda es lo que hay que dibujar. Ni uno mas, ni uno menos.
+	 *
+	 * Por eso no hay ni dieresis francesas, ni oe, ni mayusculas
+	 * acentuadas salvo dos: no aparecen en ningun texto. El dia que una
+	 * traduccion use una, t/i18n-fuente.py falla nombrandola, en vez de
+	 * salir un hueco en la tele.
+	 *
+	 * (La A con grave y la C con cedilla son las dos mayusculas que si
+	 * hacen falta: "À quel centre..." y "Ça s'applique..." en frances.
+	 * Una N con virgulilla mayuscula tambien se colo al escribir "NAO"
+	 * en portugues; se cambio el enfasis de palabra en vez de dibujar un
+	 * glifo que a 5x7 sale como un borron.)
+	 *
+	 * El trazo no es inventado: se saco por diferencia de los que ya
+	 * estaban --el agudo de la a, la dieresis de la u, la virgulilla de
+	 * la n-- y se comprobo que la regla reproduce esos seis IDENTICOS
+	 * antes de usarla para las nuevas. Que "sigue el mismo estilo" sea
+	 * una comprobacion y no una opinion.
+	 *
+	 * (La i acentuada no entra en esa comprobacion: esta retocada a
+	 * mano, con el acento mas inclinado aprovechando el hueco que deja
+	 * el punto. La i con circunflejo de aqui abajo sigue ESE estilo, no
+	 * el generico.) */
+	{ 0xE0, {0x20,0x55,0x56,0x54,0x78} },   /* à */
+	{ 0xE2, {0x20,0x56,0x55,0x56,0x78} },   /* â */
+	{ 0xE3, {0x22,0x55,0x55,0x55,0x7A} },   /* ã */
+	{ 0xE7, {0x1C,0x22,0x62,0x62,0x10} },   /* ç */
+	{ 0xE8, {0x38,0x55,0x56,0x54,0x18} },   /* è */
+	{ 0xEA, {0x38,0x56,0x55,0x56,0x18} },   /* ê */
+	{ 0xEE, {0x00,0x46,0x7D,0x42,0x00} },   /* î */
+	{ 0xF2, {0x38,0x45,0x46,0x44,0x38} },   /* ò */
+	{ 0xF4, {0x38,0x46,0x45,0x46,0x38} },   /* ô */
+	{ 0xF5, {0x3A,0x45,0x45,0x45,0x3A} },   /* õ */
+	{ 0xF9, {0x3C,0x41,0x42,0x20,0x7C} },   /* ù */
+	{ 0xFB, {0x3C,0x42,0x41,0x22,0x7C} },   /* û */
+	{ 0xC0, {0x7C,0x13,0x12,0x12,0x7C} },   /* À */
+	{ 0xC7, {0x1E,0x21,0x61,0x61,0x12} },   /* Ç */
 };
 #define FONT_EXTRA_N ((int)(sizeof(font_extra)/sizeof(font_extra[0])))
 
